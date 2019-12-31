@@ -61,7 +61,9 @@ struct Computer
   unsigned char carryFlag;
 };
 
-void brk(unsigned char instr, struct Computer *state) 
+enum AddressingMode { Implicit, Immediate, ZeroPage, ZeroPageX, ZeroPageY, Relative, Absolute, AbsoluteX, AbsoluteY, Indirect, IndexedIndirect, IndirectIndexed };
+
+void brk(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state) 
 {
   state->pc++;
   unsigned int pcToPushToStack = state->pc + 1;
@@ -87,27 +89,96 @@ void brk(unsigned char instr, struct Computer *state)
   state->pc = (highNibble << 8) | lowNibble;
 }
 
+void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  int i = state->pc;
+  unsigned char *buffer = state->memory;
+  unsigned char value = 0;
+
+  // LDA; Absolute; Len 3; Time 4
+  if (addressingMode == Absolute)
+  {
+    unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
+    value = state->memory[memoryAddress];
+    length = 3;
+    printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
+    printf("-> LDA %02x%02x -> set acc to value in memory -> acc = %d\n", buffer[i+2], buffer[i+1], value);
+  } 
+  // LDA; Immediate; Len 2; Time 2
+  else if (addressingMode == Immediate)
+  {
+    value = buffer[i+1];
+    length = 2;
+    printf("%02x %02x\n", instr, buffer[i+1]);
+    printf("-> LDA #%02x -> acc = %d\n", state->acc, state->acc);
+  }
+  // LDA; Zero page; Len 2; Time 3
+  else if (addressingMode == ZeroPage)
+  {
+    value = state->memory[buffer[i+1]];
+    length = 2;
+    printf("%02x %02x\n", instr, buffer[i+1]);
+    printf("-> LDA %02x - zero page - set acc to value in memory -> acc = %d\n", buffer[i+1], value);
+  }
+  // LDA; Absolute,X; Len 3
+  else if (addressingMode == AbsoluteX)
+  {
+    unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
+    value = state->memory[memoryAddress + state->xRegister];
+    length = 3;
+    printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
+    printf("-> LDA %02x%02x + X %02x -> acc = %d\n", buffer[i+2], buffer[i+1], state->xRegister, value);
+  }
+
+  state->acc = value;
+  state->zeroFlag = (state->acc == 0);
+  state->negativeFlag = ((state->acc & 0xFF) == 0x80);
+  state->pc += length;
+}
+
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
 
-  void (*instructions[256])(unsigned char, struct Computer *) = {
-    &brk, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  void (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
+//  0     1     2     3 
+    &brk, 0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 3
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 5
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 7
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
+    0,    0,    0,    0, 0, &lda, 0, 0, 0, &lda, 0, 0, 0, &lda, 0, 0, // A
+    0,    0,    0,    0, 0,    0, 0, 0, 0,    0, 0, 0, 0, &lda, 0, 0, // B
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // C
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // E
+    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 //  F
+  };
+
+  enum AddressingMode addressingModes[256] = {
+    //  0     1     2     3     4  5  6  7  8  9  A  B  C  D  E  F 
+    Implicit, 0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 3
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 5
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 7
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
+    0,        0,    0,    0,    0, ZeroPage, 0, 0, 0, Immediate, 0, 0, 0, Absolute, 0, 0, // A
+    0,        0,    0,    0,    0,    0, 0, 0, 0,    0, 0, 0, 0, AbsoluteX, 0, 0, // B
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // C
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // E
+    0,        0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 //  F
   };
 
   unsigned char buffer[262160];
@@ -144,49 +215,7 @@ int main(int argc, char **argv)
 
     if (instructions[instr] != 0)
     {
-      instructions[instr](instr, &state);
-    }
-    // LDA; Absolute; Len 3; Time 4
-    else if (instr == 0xAD)
-    {
-      unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
-      state.acc = memory[memoryAddress];
-      state.zeroFlag = (state.acc == 0);
-      state.negativeFlag = ((state.acc & 0xFF) == 0x80);
-      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-      printf("-> LDA %02x%02x -> set acc to value in memory -> acc = %d\n", buffer[i+2], buffer[i+1], state.acc);
-      state.pc += 3;
-    } 
-    // LDA; Immediate; Len 2; Time 2
-    else if (instr == 0xA9)
-    {
-      state.acc = buffer[i+1];
-      state.zeroFlag = (state.acc == 0);
-      state.negativeFlag = ((state.acc & 0xFF) == 0x80);
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> LDA #%02x -> acc = %d\n", state.acc, state.acc);
-      state.pc += 2;
-    }
-    // LDA; Zero page; Len 2; Time 3
-    else if (instr == 0xA5)
-    {
-      state.acc = memory[buffer[i+1]];
-      state.zeroFlag = (state.acc == 0);
-      state.negativeFlag = ((state.acc & 0xFF) == 0x80);
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> LDA %02x - zero page - set acc to value in memory -> acc = %d\n", buffer[i+1], state.acc);
-      state.pc += 2;
-    }
-    // LDA; Absolute,X; Len 3
-    else if (instr == 0xBD)
-    {
-      unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
-      state.acc = memory[memoryAddress + state.xRegister];
-      state.zeroFlag = (state.acc == 0);
-      state.negativeFlag = ((state.acc & 0xFF) == 0x80);
-      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-      printf("-> LDA %02x%02x + X %02x -> acc = %d\n", buffer[i+2], buffer[i+1], state.xRegister, state.acc);
-      state.pc += 3;
+      instructions[instr](instr, addressingModes[instr], &state);
     }
     // BNE; Branch on not equal; Len 2
     else if (instr == 0xD0)
