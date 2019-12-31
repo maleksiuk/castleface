@@ -4,13 +4,17 @@
 // the 6502 has 256 byte pages
 
 /*
- * Starting out by seeing if I can get the functional test to pass from https://github.com/koute/pinky
+ * Starting out by seeing if I can get the functional test to pass from https://github.com/Klaus2m5/6502_65C02_functional_tests
  * (file name: 6502_functional_test.bin)
- * actually this one seems to work better: https://github.com/Klaus2m5/6502_65C02_functional_tests
+ *
+ * This lst is an important file to compare my output to:
+ * https://github.com/Klaus2m5/6502_65C02_functional_tests/blob/master/bin_files/6502_functional_test.lst
  *
  * Based on recommendation from https://www.reddit.com/r/EmuDev/comments/9s755i/is_there_a_comprehensive_nes_emulation_guide/e8qi80f/
  *
  * Addressing: http://obelisk.me.uk/6502/addressing.html#ZPG
+ *
+ * Status flags: NV1BDIZC
  *
  */
 
@@ -22,6 +26,21 @@ void printState(unsigned char x, unsigned char y, unsigned char a, unsigned char
 void setNegativeFlag(unsigned char val, unsigned char *negativeFlag)
 {
   *negativeFlag = ((val & 0x80) != 0);
+}
+
+void pushToStack(unsigned char val, unsigned char *memory, unsigned char *stackRegister)
+{
+  printf("Push %02x to stack at position %02x\n", val, *stackRegister);
+  memory[0x0100 + *stackRegister] = val;
+  *stackRegister = *stackRegister - 1;
+}
+
+unsigned char popFromStack(unsigned char *memory, unsigned char *stackRegister)
+{
+  *stackRegister = *stackRegister + 1;
+  unsigned char val = memory[0x0100 + *stackRegister];
+  printf("Pop %02x from stack position %02x\n", val, *stackRegister);
+  return val;
 }
 
 int main(int argc, char **argv) 
@@ -77,7 +96,7 @@ int main(int argc, char **argv)
       zeroFlag = (acc == 0);
       negativeFlag = ((acc & 0xFF) == 0x80);
       printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-      printf("-> LDA %02x%02x -> acc = %d\n", buffer[i+2], buffer[i+1], acc);
+      printf("-> LDA %02x%02x -> set acc to value in memory -> acc = %d\n", buffer[i+2], buffer[i+1], acc);
       pc += 3;
     } 
     // LDA; Immediate; Len 2; Time 2
@@ -89,6 +108,27 @@ int main(int argc, char **argv)
       printf("%02x %02x\n", instr, buffer[i+1]);
       printf("-> LDA #%02x -> acc = %d\n", acc, acc);
       pc += 2;
+    }
+    // LDA; Zero page; Len 2; Time 3
+    else if (instr == 0xA5)
+    {
+      acc = memory[buffer[i+1]];
+      zeroFlag = (acc == 0);
+      negativeFlag = ((acc & 0xFF) == 0x80);
+      printf("%02x %02x\n", instr, buffer[i+1]);
+      printf("-> LDA %02x - zero page - set acc to value in memory -> acc = %d\n", buffer[i+1], acc);
+      pc += 2;
+    }
+    // LDA; Absolute,X; Len 3
+    else if (instr == 0xBD)
+    {
+      unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
+      acc = memory[memoryAddress + xRegister];
+      zeroFlag = (acc == 0);
+      negativeFlag = ((acc & 0xFF) == 0x80);
+      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
+      printf("-> LDA %02x%02x + X %02x -> acc = %d\n", buffer[i+2], buffer[i+1], xRegister, acc);
+      pc += 3;
     }
     // BNE; Branch on not equal; Len 2
     else if (instr == 0xD0)
@@ -172,14 +212,8 @@ int main(int argc, char **argv)
       unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
 
       unsigned int pcToPutInStack = (pc + 3) - 1;
-
-      unsigned int loc1 = 0x0100 + stackRegister;
-      memory[loc1] = pcToPutInStack >> 8;
-      stackRegister--;
-
-      unsigned int loc2 = 0x0100 + stackRegister;
-      memory[loc2] = pcToPutInStack;  // TODO: do I need to cast to unsigned char?
-      stackRegister--;
+      pushToStack(pcToPutInStack >> 8, memory, &stackRegister);
+      pushToStack(pcToPutInStack, memory, &stackRegister);
 
       printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
       printf("-> JSR - jump to subroutine: %x\n", memoryAddress);
@@ -188,13 +222,8 @@ int main(int argc, char **argv)
     // RTS; Len 1; Time 6
     else if (instr == 0x60)
     {
-      stackRegister++;
-      unsigned int loc1 = 0x0100 + stackRegister;
-      unsigned char lowNibble = memory[loc1];
-
-      stackRegister++;
-      unsigned int loc2 = 0x0100 + stackRegister;
-      unsigned char highNibble = memory[loc2];
+      unsigned char lowNibble = popFromStack(memory, &stackRegister);
+      unsigned char highNibble = popFromStack(memory, &stackRegister);
 
       unsigned int memoryAddress = (highNibble << 8) | lowNibble;
 
@@ -209,21 +238,17 @@ int main(int argc, char **argv)
       printf("%02x\n", instr);
       printf("-> PHA (push acc value %02x to stack at position %02x)\n", acc, stackRegister);
 
-      unsigned int loc = 0x0100 + stackRegister;
-      memory[loc] = acc;
-      stackRegister--;
+      pushToStack(acc, memory, &stackRegister);
 
       pc++;
     }
     // PLA; Pull from stack and into acc; Len 1; Time 4
     else if (instr == 0x68)
     {
-      stackRegister++;
-      unsigned int loc = 0x0100 + stackRegister;
-      acc = memory[loc];
+      acc = popFromStack(memory, &stackRegister);
       
       printf("%02x\n", instr);
-      printf("-> PLA (pull from stack position %02x and into acc -> %02x)\n", stackRegister, acc);
+      printf("-> PLA (pull from stack into acc -> %02x)\n", acc);
 
       zeroFlag = (acc == 0);
       setNegativeFlag(acc, &negativeFlag);
@@ -233,9 +258,7 @@ int main(int argc, char **argv)
     // PLP; Pull processor status; Len 1; Time 4
     else if (instr == 0x28)
     {
-      stackRegister++;
-      unsigned int loc = 0x0100 + stackRegister;
-      unsigned char value = memory[loc];
+      unsigned char value = popFromStack(memory, &stackRegister);
 
       // NV1BDIZC
       carryFlag = (value & 0x01) != 0;
@@ -246,7 +269,7 @@ int main(int argc, char **argv)
       negativeFlag = (value & 0x80) != 0;
 
       printf("%02x\n", instr);
-      printf("-> PLP (pull from stack position %02x and into status flags)\n", stackRegister);
+      printf("-> PLP (pull from stack and into status flags)\n");
 
       pc++;
     }
@@ -257,13 +280,10 @@ int main(int argc, char **argv)
       unsigned char value = (negativeFlag << 7) | (overflowFlag << 6) | (1 << 5) | (1 << 4)
         | (decimalFlag << 3) | (interruptDisable << 2) | (zeroFlag << 1) | (carryFlag);
 
-      unsigned int loc = 0x0100 + stackRegister;
-      memory[loc] = value;
-
       printf("%02x\n", instr);
-      printf("-> PHP (push status flags %02x to stack position %02x)\n", value, stackRegister);
+      printf("-> PHP (push status flags %02x to stack)\n", value);
+      pushToStack(value, memory, &stackRegister);
 
-      stackRegister--;
       pc++;
     }
     // CLD; Clear decimal flag; Len 1; Time 2
@@ -284,6 +304,16 @@ int main(int argc, char **argv)
       printf("-> LDX #%x -- (load X with value %x)\n", xRegister, xRegister);
       pc += 2;
     }
+    // LDX; Load register X; zero page; Len 2; Time 3
+    else if (instr == 0xA6) 
+    {
+      xRegister = memory[buffer[i+1]];
+      zeroFlag = (xRegister == 0);
+      setNegativeFlag(xRegister, &negativeFlag);
+      printf("%02x %02x\n", instr, buffer[i+1]);
+      printf("-> LDX %x - zero page - (load X with value at memory address %x: %x)\n", buffer[i+1], buffer[i+1], xRegister);
+      pc += 2;
+    }
     // TXS; Transfer X to Stack Pointer; Len 1; Time 2
     else if (instr == 0x9A)
     {
@@ -299,7 +329,7 @@ int main(int argc, char **argv)
       zeroFlag = (xRegister == 0);
       setNegativeFlag(xRegister, &negativeFlag);
       printf("%02x\n", instr);
-      printf("-> TSX -- (transfer %x to x reg)\n", stackRegister);
+      printf("-> TSX -- (transfer stack register %x to x reg)\n", stackRegister);
       pc++;
     } 
     // TAY; Transfer Acc to Y; Len 1; Time 2
@@ -320,6 +350,24 @@ int main(int argc, char **argv)
       printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
       printf("-> STA (set memory address %x to acc value %x)\n", operand, acc);
       pc += 3;
+    }
+    // STA; Store accumulator in memory; zero page; Len 2; Time 3
+    else if (instr == 0x85)
+    {
+      int operand = buffer[i+1];
+      memory[operand] = acc;
+      printf("%02x %02x\n", instr, buffer[i+1]);
+      printf("-> STA zero page (set memory address %02x to acc value %x)\n", operand, acc);
+      pc += 2;
+    }
+    // STX; Store x in memory; zero page; Len 2; Time 3
+    else if (instr == 0x86)
+    {
+      int operand = buffer[i+1];
+      memory[operand] = xRegister;
+      printf("%02x %02x\n", instr, buffer[i+1]);
+      printf("-> STX zero page (set memory address %02x to x value %x)\n", operand, xRegister);
+      pc += 2;
     }
     // CMP; Compare acc with another value; immediate; Len 2; Time 2
     else if (instr == 0xC9)
@@ -540,6 +588,17 @@ int main(int argc, char **argv)
       printf("-> EOR #%02x -- (exclusive or between acc and %02x)\n", operand, operand);
       pc += 2;
     }
+    // ORA; Logical Inclusive OR; immediate; Len 2; Time 2
+    else if (instr == 0x09)
+    {
+      unsigned char operand = buffer[i+1];
+      acc = acc | operand;
+      zeroFlag = (acc == 0);
+      setNegativeFlag(acc, &negativeFlag);
+      printf("%02x\n", instr);
+      printf("-> ORA #%02x -- (inclusive or between acc and %02x)\n", operand, operand);
+      pc += 2;
+    }
     // DEX; Len 1; Time 2
     else if (instr == 0xCA)
     {
@@ -589,6 +648,50 @@ int main(int argc, char **argv)
 
       pc++;
     }
+    // BRK; Force Interrupt; Len 1(?); Time 7
+    else if (instr == 0x00)
+    {
+      pc++;
+      unsigned int pcToPushToStack = pc + 1;
+      pushToStack(pcToPushToStack >> 8, memory, &stackRegister);
+      pushToStack(pcToPushToStack, memory, &stackRegister);
+
+      // NV1BDIZC
+      // extract into function?
+      unsigned char processorStatus = (negativeFlag << 7) | (overflowFlag << 6) | (1 << 5) | (1 << 4)
+        | (decimalFlag << 3) | (interruptDisable << 2) | (zeroFlag << 1) | (carryFlag);
+
+      /*processorStatus = processorStatus | 0x10;  // set break command flag*/
+      pushToStack(processorStatus, memory, &stackRegister);
+
+      interruptDisable = 1;
+
+      printf("%02x\n", instr);
+      printf("-> BRK -- (force interrupt)\n");
+
+      unsigned char lowNibble = memory[0xFFFE];
+      unsigned char highNibble = memory[0xFFFF];
+      
+      pc = (highNibble << 8) | lowNibble;
+    }
+    // RTI; Len 1; Time 6
+    else if (instr == 0x40)
+    {
+      unsigned char processorFlags = popFromStack(memory, &stackRegister);
+      unsigned char pcLowNibble = popFromStack(memory, &stackRegister);
+      unsigned char pcHighNibble = popFromStack(memory, &stackRegister);
+
+      carryFlag = (processorFlags & 0x01) != 0;
+      zeroFlag = (processorFlags & 0x02) != 0;
+      interruptDisable = (processorFlags & 0x04) != 0;
+      decimalFlag = (processorFlags & 0x08) != 0;
+      overflowFlag = (processorFlags & 0x40) != 0;
+      negativeFlag = (processorFlags & 0x80) != 0;
+
+      /*interruptDisable = 0;*/
+
+      pc = (pcHighNibble << 8) | pcLowNibble;
+    }
     else {
       printf("unknown instruction: %x\n", instr);
       printf("test number: %02x\n", memory[0x0200]);
@@ -628,6 +731,4 @@ int main(int argc, char **argv)
 
   return(0);
 }
-
-
 
