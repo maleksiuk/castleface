@@ -89,6 +89,82 @@ void brk(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc = (highNibble << 8) | lowNibble;
 }
 
+int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+
+  if (addressingMode == Absolute)
+  {
+    length = 2;
+    unsigned int memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
+    *value = state->memory[memoryAddress];
+  }
+  else if (addressingMode == Immediate)
+  {
+    length = 1;
+    *value = state->memory[state->pc+1];
+  }
+  else if (addressingMode == ZeroPage)
+  {
+    length = 1;
+    unsigned char memoryAddress = state->memory[state->pc+1];
+    *value = state->memory[memoryAddress];
+  }
+  else if (addressingMode == AbsoluteX)
+  {
+    length = 2;
+    unsigned int memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
+    *value = state->memory[memoryAddress + state->xRegister];
+  }
+  else
+  {
+    printf("ERROR: Need to implement a new addressing mode.\n");
+  }
+
+  return length;
+}
+
+void printInstruction(unsigned char instr, int length, struct Computer *state)
+{
+  printf("%02x", instr);
+  for (int i = 1; i <= length; i++)
+  {
+    printf(" %02x", state->memory[state->pc + i]);
+  }
+  printf("\n");
+}
+
+char *addressingModeString(enum AddressingMode addressingMode)
+{
+  switch(addressingMode)
+  {
+    case Implicit:
+      return "Implicit";
+    case Immediate:
+      return "Immediate";
+    case ZeroPage:
+      return "ZeroPage";
+    case ZeroPageX:
+      return "ZeroPageX";
+    case ZeroPageY:
+      return "ZeroPageY";
+    case Relative:
+      return "Relative";
+    case Absolute:
+      return "Absolute";
+    case AbsoluteX:
+      return "AbsoluteX";
+    case AbsoluteY:
+      return "AbsoluteY";
+    case Indirect: 
+      return "Indirect";
+    case IndexedIndirect: 
+      return "IndexedIndirect";
+    case IndirectIndexed:
+      return "IndirectIndexed";
+  }
+}
+
 void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
@@ -96,45 +172,15 @@ void lda(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   unsigned char *buffer = state->memory;
   unsigned char value = 0;
 
-  // LDA; Absolute; Len 3; Time 4
-  if (addressingMode == Absolute)
-  {
-    unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
-    value = state->memory[memoryAddress];
-    length = 3;
-    printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-    printf("-> LDA %02x%02x -> set acc to value in memory -> acc = %d\n", buffer[i+2], buffer[i+1], value);
-  } 
-  // LDA; Immediate; Len 2; Time 2
-  else if (addressingMode == Immediate)
-  {
-    value = buffer[i+1];
-    length = 2;
-    printf("%02x %02x\n", instr, buffer[i+1]);
-    printf("-> LDA #%02x -> acc = %d\n", state->acc, state->acc);
-  }
-  // LDA; Zero page; Len 2; Time 3
-  else if (addressingMode == ZeroPage)
-  {
-    value = state->memory[buffer[i+1]];
-    length = 2;
-    printf("%02x %02x\n", instr, buffer[i+1]);
-    printf("-> LDA %02x - zero page - set acc to value in memory -> acc = %d\n", buffer[i+1], value);
-  }
-  // LDA; Absolute,X; Len 3
-  else if (addressingMode == AbsoluteX)
-  {
-    unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
-    value = state->memory[memoryAddress + state->xRegister];
-    length = 3;
-    printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-    printf("-> LDA %02x%02x + X %02x -> acc = %d\n", buffer[i+2], buffer[i+1], state->xRegister, value);
-  }
+  length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> LDA; %s; Set acc to value %02x\n", addressingModeString(addressingMode), value);
 
   state->acc = value;
   state->zeroFlag = (state->acc == 0);
   state->negativeFlag = ((state->acc & 0xFF) == 0x80);
-  state->pc += length;
+  state->pc += (1 + length);
 }
 
 int main(int argc, char **argv) 
@@ -142,23 +188,23 @@ int main(int argc, char **argv)
   printf("hi there\n");
 
   void (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
-//  0     1     2     3 
-    &brk, 0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 3
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 5
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 7
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-    0,    0,    0,    0, 0, &lda, 0, 0, 0, &lda, 0, 0, 0, &lda, 0, 0, // A
-    0,    0,    0,    0, 0,    0, 0, 0, 0,    0, 0, 0, 0, &lda, 0, 0, // B
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // C
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // E
-    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 //  F
+//  0     1     2     3      4     5     6     7     8     9     A     B     C     D     E     F 
+    &brk, 0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 0
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 1
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 2
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 3
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 4
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 5
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 6
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 7
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 8
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 9
+    0,    0,    0,    0,     0, &lda,    0,    0,    0, &lda,    0,    0,    0, &lda,    0,    0, // A
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0, &lda,    0,    0, // B
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // C
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // D
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // E
+    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0 //  F
   };
 
   enum AddressingMode addressingModes[256] = {
