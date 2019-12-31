@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 
     instr = buffer[i];
 
-    printf("PC: %02x\n", pc);
+    printf("PC: %04x\n", pc);
 
     // LDA; Absolute; Len 3; Time 4
     if (instr == 0xAD)
@@ -154,6 +154,55 @@ int main(int argc, char **argv)
       printf("-> JMP to memory address: %x\n", memoryAddress);
       pc = memoryAddress;
     }
+    // JMP; Jump; Indirect; Len 3, Time 5
+    else if (instr == 0x6C)
+    {
+      unsigned int memoryAddress1 = (buffer[i+2] << 8) | buffer[i+1];
+      unsigned int memoryAddress2 = ((buffer[i+2] << 8) | buffer[i+1]) + 1;
+      unsigned char lowNybble = memory[memoryAddress1];
+      unsigned char highNybble = memory[memoryAddress2];
+      unsigned int memoryAddress = (highNybble << 8) | lowNybble;
+      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
+      printf("-> JMP to indirect memory address: %x\n", memoryAddress);
+      pc = memoryAddress;
+    }
+    // JSR; Jump to subroutine; Absolute; Len 3; Time 6
+    else if (instr == 0x20)
+    {
+      unsigned int memoryAddress = (buffer[i+2] << 8) | buffer[i+1];
+
+      unsigned int pcToPutInStack = (pc + 3) - 1;
+
+      unsigned int loc1 = 0x0100 + stackRegister;
+      memory[loc1] = pcToPutInStack >> 8;
+      stackRegister--;
+
+      unsigned int loc2 = 0x0100 + stackRegister;
+      memory[loc2] = pcToPutInStack;  // TODO: do I need to cast to unsigned char?
+      stackRegister--;
+
+      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
+      printf("-> JSR - jump to subroutine: %x\n", memoryAddress);
+      pc = memoryAddress;
+    }
+    // RTS; Len 1; Time 6
+    else if (instr == 0x60)
+    {
+      stackRegister++;
+      unsigned int loc1 = 0x0100 + stackRegister;
+      unsigned char lowNibble = memory[loc1];
+
+      stackRegister++;
+      unsigned int loc2 = 0x0100 + stackRegister;
+      unsigned char highNibble = memory[loc2];
+
+      unsigned int memoryAddress = (highNibble << 8) | lowNibble;
+
+      printf("%02x\n", instr);
+      printf("-> RTS - return from subroutine: %x\n", memoryAddress);
+      pc = memoryAddress;
+      pc++;
+    }
     // PHA; Push acc value to the stack; Len 1; Time 3
     else if (instr == 0x48)
     {
@@ -214,7 +263,6 @@ int main(int argc, char **argv)
       printf("%02x\n", instr);
       printf("-> PHP (push status flags %02x to stack position %02x)\n", value, stackRegister);
 
-      // fd = 11111101
       stackRegister--;
       pc++;
     }
@@ -500,14 +548,14 @@ int main(int argc, char **argv)
       setNegativeFlag(xRegister, &negativeFlag);
       printf("%02x\n", instr);
       printf("-> DEX -- (decrement X by 1 -> results in %02x)\n", xRegister);
-      pc += 1;
+      pc++;
     }
     // NOP; Len 1; Time 2
     else if (instr == 0xEA)
     {
       printf("%02x\n", instr);
       printf("-> NOP -- (do nothing)\n");
-      pc += 1;
+      pc++;
     }
     // CLC; Len 1; Time 2
     else if (instr == 0x18)
@@ -515,11 +563,35 @@ int main(int argc, char **argv)
       printf("%02x\n", instr);
       printf("-> CLC -- (clear carry flag)\n");
       carryFlag = 0;
-      pc += 1;
+      pc++;
+    }
+    // INX; Increment X; Len 1; Time 2
+    else if (instr == 0xE8)
+    {
+      xRegister += 1;
+      zeroFlag = (xRegister == 0);
+      setNegativeFlag(xRegister, &negativeFlag);
+
+      printf("%02x\n", instr);
+      printf("-> INX -- (increment x to be %02x)\n", xRegister);
+
+      pc++;
+    }
+    // INY; Increment Y; Len 1; Time 2
+    else if (instr == 0xC8)
+    {
+      yRegister += 1;
+      zeroFlag = (yRegister == 0);
+      setNegativeFlag(yRegister, &negativeFlag);
+
+      printf("%02x\n", instr);
+      printf("-> INY -- (increment y to be %02x)\n", yRegister);
+
+      pc++;
     }
     else {
       printf("unknown instruction: %x\n", instr);
-      printf("memory 0200: %02x\n", memory[0x0200]);
+      printf("test number: %02x\n", memory[0x0200]);
       return(0);
     }
 
