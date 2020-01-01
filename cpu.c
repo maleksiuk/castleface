@@ -94,6 +94,46 @@ void brk(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc = (highNibble << 8) | lowNibble;
 }
 
+// TODO: make getOperandValue use this
+int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+
+  if (addressingMode == Absolute)
+  {
+    length = 2;
+    *memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
+  }
+  else if (addressingMode == ZeroPage)
+  {
+    length = 1;
+    *memoryAddress = state->memory[state->pc+1];
+  }
+  else if (addressingMode == ZeroPageY)
+  {
+    length = 1;
+    *memoryAddress = state->memory[state->pc+1] + state->yRegister;
+  }
+  else if (addressingMode == AbsoluteX)
+  {
+    length = 2;
+    *memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
+    *memoryAddress += state->xRegister;
+  }
+  else if (addressingMode == AbsoluteY)
+  {
+    length = 2;
+    *memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
+    *memoryAddress += state->yRegister;
+  }
+  else
+  {
+    printf("ERROR: Need to implement a new addressing mode.\n");
+  }
+
+  return length;
+}
+
 int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
@@ -109,22 +149,10 @@ int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, st
     length = 1;
     *value = state->memory[state->pc+1];
   }
-  else if (addressingMode == ZeroPage)
+  else if (addressingMode == ZeroPage || addressingMode == ZeroPageY || addressingMode == AbsoluteX || addressingMode == AbsoluteY)
   {
-    length = 1;
-    unsigned char memoryAddress = state->memory[state->pc+1];
-    *value = state->memory[memoryAddress];
-  }
-  else if (addressingMode == AbsoluteX)
-  {
-    length = 2;
-    unsigned int memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
-    *value = state->memory[memoryAddress + state->xRegister];
-  }
-  else if (addressingMode == ZeroPageY)
-  {
-    length = 1;
-    unsigned char memoryAddress = state->memory[state->pc+1] + state->yRegister;
+    unsigned int memoryAddress = 0;
+    length = getMemoryAddress(&memoryAddress, addressingMode, state);
     *value = state->memory[memoryAddress];
   }
   else
@@ -178,10 +206,9 @@ char *addressingModeString(enum AddressingMode addressingMode)
 
 void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  int length = 0;
   unsigned char value = 0;
 
-  length = getOperandValue(&value, addressingMode, state);
+  int length = getOperandValue(&value, addressingMode, state);
 
   printInstruction(instr, length, state);
   printf("-> LDA; %s; Set acc to value %02x\n", addressingModeString(addressingMode), value);
@@ -205,6 +232,30 @@ void ldx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->xRegister = value;
   setZeroFlag(state->xRegister, &state->zeroFlag);
   setNegativeFlag(state->xRegister, &state->negativeFlag);
+  state->pc += (1 + length);
+}
+
+void sta(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned int memoryAddress = 0;
+  int length = getMemoryAddress(&memoryAddress, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> STA; %s; Set memory address %x to acc value %02x\n", addressingModeString(addressingMode), memoryAddress, state->acc);
+
+  state->memory[memoryAddress] = state->acc;
+  state->pc += (1 + length);
+}
+
+void stx(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned int memoryAddress = 0;
+  int length = getMemoryAddress(&memoryAddress, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> STX; %s; Set memory address %x to x value %02x\n", addressingModeString(addressingMode), memoryAddress, state->xRegister);
+
+  state->memory[memoryAddress] = state->xRegister;
   state->pc += (1 + length);
 }
 
@@ -258,11 +309,29 @@ void clv(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void cmp(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> CMP; %s; compare value %x to acc %x\n", addressingModeString(addressingMode), value, state->acc);
+
+  unsigned char result = state->acc - value;
+  setZeroFlag(result, &state->zeroFlag);
+  state->carryFlag = (state->acc >= value);
+  setNegativeFlag(result, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
 
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
 
+  // instruction table
   void (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
 //  0     1     2     3      4     5     6     7     8     9     A     B     C     D     E     F 
     &brk, 0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 0
@@ -273,34 +342,34 @@ int main(int argc, char **argv)
     0,    0,    0,    0,     0,    0,    0,    0, &cli,    0,    0,    0,    0,    0,    0,    0, // 5
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 6
     0,    0,    0,    0,     0,    0,    0,    0, &sei,    0,    0,    0,    0,    0,    0,    0, // 7
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 8
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 9
+    0,    0,    0,    0,     0, &sta, &stx,    0,    0,    0,    0,    0,    0, &sta,    0,    0, // 8
+    0,    0,    0,    0,     0,    0, &stx,    0,    0, &sta,    0,    0,    0,    0,    0,    0, // 9
     0,    0, &ldx,    0,     0, &lda, &ldx,    0,    0, &lda,    0,    0,    0, &lda,    0,    0, // A
-    0,    0,    0,    0,     0,    0, &ldx,    0, &clv,    0,    0,    0,    0, &lda,    0,    0, // B
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // C
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // D
+    0,    0,    0,    0,     0,    0, &ldx,    0, &clv, &lda,    0,    0,    0, &lda, &ldx,    0, // B
+    0,    0,    0,    0,     0,    0,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // C
+    0,    0,    0,    0,     0,    0,    0,    0,    0, &cmp,    0,    0,    0,    0,    0,    0, // D
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // E
     0,    0,    0,    0,     0,    0,    0,    0, &sed,    0,    0,    0,    0,    0,    0,    0 //  F
   };
 
   enum AddressingMode addressingModes[256] = {
-    //  0            1                2                3                4  5  6  7  8  9  A  B  C  D  E  F 
-    Implicit,        0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 1
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 2
-    0,               0,               0,               0,               0, 0, 0, 0, Implicit, 0, 0, 0, 0, 0, 0, 0, // 3
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 4
-    0,               0,               0,               0,               0, 0, 0, 0, Implicit, 0, 0, 0, 0, 0, 0, 0, // 5
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 6
-    0,               0,               0,               0,               0, 0, 0, 0, Implicit, 0, 0, 0, 0, 0, 0, 0, // 7
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-    0,               0,       Immediate,               0,               0, ZeroPage, ZeroPage, 0, 0, Immediate, 0, 0, 0, Absolute, 0, 0, // A
-    0,               0,               0,               0,               0, 0, ZeroPageY, 0, Implicit, 0, 0, 0, 0, AbsoluteX, 0, 0, // B
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // C
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D
-    0,               0,               0,               0,               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // E
-    0,               0,               0,               0,               0, 0, 0, 0, Implicit, 0, 0, 0, 0, 0, 0, 0 //  F
+    //  0            1                2                3                4                5                6                7                8                9                A                B                C                D                E                F 
+    Implicit,        0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 0
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 1
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 2
+    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 3
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 4
+    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 5
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 6
+    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 7
+    0,               0,               0,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,               0,               Absolute,        0,               0, // 8
+    0,               0,               0,               0,               0,               0,               ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               0,               0,               0, // 9
+    0,               0,       Immediate,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,               0,               Absolute,        0,               0, // A
+    0,               0,               0,               0,               0,               0,               ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteY,       0, // B
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               Immediate,       0,               0,               0,               Absolute,        0,               0, // C
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               AbsoluteY,       0,               0,               0,               0,               0,               0, // D
+    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // E
+    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
   };
 
   unsigned char buffer[262160];
@@ -531,58 +600,6 @@ int main(int argc, char **argv)
       printf("-> TAY -- (transfer acc %x to y reg)\n", state.acc);
       state.pc++;
     } 
-    // STA; Store accumulator in memory; absolute; Len 3; Time 4
-    else if (instr == 0x8D)
-    {
-      int operand = buffer[i+2] << 8 | buffer[i+1];
-      memory[operand] = state.acc;
-      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-      printf("-> STA (set memory address %x to acc value %x)\n", operand, state.acc);
-      state.pc += 3;
-    }
-    // STA; Store accumulator in memory; zero page; Len 2; Time 3
-    else if (instr == 0x85)
-    {
-      int operand = buffer[i+1];
-      memory[operand] = state.acc;
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> STA zero page (set memory address %02x to acc value %x)\n", operand, state.acc);
-      state.pc += 2;
-    }
-    // STX; Store x in memory; zero page; Len 2; Time 3
-    else if (instr == 0x86)
-    {
-      int operand = buffer[i+1];
-      memory[operand] = state.xRegister;
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> STX zero page (set memory address %02x to x value %x)\n", operand, state.xRegister);
-      state.pc += 2;
-    }
-    // CMP; Compare acc with another value; immediate; Len 2; Time 2
-    else if (instr == 0xC9)
-    {
-      int operand = buffer[i+1];
-      unsigned char result = state.acc - operand;
-      state.zeroFlag = (result == 0);
-      state.carryFlag = (state.acc >= operand);
-      setNegativeFlag(result, &state.negativeFlag);
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> CMP #%02x (compare value %x to acc value %x)\n", operand, operand, state.acc);
-      state.pc += 2;
-    }
-    // CMP; Compare acc with another value; absolute; Len 3; Time 4
-    else if (instr == 0xCD)
-    {
-      int operand = buffer[i+2] << 8 | buffer[i+1];
-      unsigned char value = memory[operand];
-      unsigned char result = state.acc - value;
-      state.zeroFlag = (result == 0);
-      state.carryFlag = (state.acc >= value);
-      setNegativeFlag(result, &state.negativeFlag);
-      printf("%02x %02x %02x\n", instr, buffer[i+1], buffer[i+2]);
-      printf("-> CMP %x (compare value at %x, %02x, to acc value %x)\n", operand, operand, value, state.acc);
-      state.pc += 3;
-    }
     // CPY; Compare y with another value; immediate; Len 2; Time 2
     else if (instr == 0xC0)
     {
