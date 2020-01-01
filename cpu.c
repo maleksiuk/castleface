@@ -109,10 +109,17 @@ int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressing
     length = 1;
     *memoryAddress = state->memory[state->pc+1];
   }
+  else if (addressingMode == ZeroPageX)
+  {
+    length = 1;
+    unsigned char wrapAroundMemoryAddress = state->memory[state->pc+1] + state->xRegister;
+    *memoryAddress = wrapAroundMemoryAddress;
+  }
   else if (addressingMode == ZeroPageY)
   {
     length = 1;
-    *memoryAddress = state->memory[state->pc+1] + state->yRegister;
+    unsigned char wrapAroundMemoryAddress = state->memory[state->pc+1] + state->yRegister;
+    *memoryAddress = wrapAroundMemoryAddress;
   }
   else if (addressingMode == AbsoluteX)
   {
@@ -149,7 +156,7 @@ int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, st
     length = 1;
     *value = state->memory[state->pc+1];
   }
-  else if (addressingMode == ZeroPage || addressingMode == ZeroPageY || addressingMode == AbsoluteX || addressingMode == AbsoluteY)
+  else if (addressingMode == ZeroPage || addressingMode == ZeroPageX || addressingMode == ZeroPageY || addressingMode == AbsoluteX || addressingMode == AbsoluteY)
   {
     unsigned int memoryAddress = 0;
     length = getMemoryAddress(&memoryAddress, addressingMode, state);
@@ -912,24 +919,4 @@ int main(int argc, char **argv)
   return(0);
 }
 
-
-// old brk:
-/*PC: 09cf*/
-/*Push 09 to stack at position ff*/
-/*Push d1 to stack at position fe*/
-/*Push 30 to stack at position fd*/
-/*00*/
-/*-> BRK -- (force interrupt)*/
-/*State: A=42 X=52 Y=4b Z=00 N=00 C=00 V=00 PC=37ab S=fc*/
-/*Top stack values: 09 d1 30 53 ff*/
-
-
-/*PC: 09cf*/
-/*NEW BRK*/
-/*Push 00 to stack at position ff*/
-/*Push 02 to stack at position fe*/
-/*Push 30 to stack at position fd*/
-/*-> BRK -- (force interrupt)*/
-/*State: A=42 X=52 Y=4b Z=00 N=00 C=00 V=00 PC=9cf S=fc*/
-/*Top stack values: 00 02 30 53 ff*/
 
