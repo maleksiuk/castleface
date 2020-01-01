@@ -66,7 +66,7 @@ struct Computer
   unsigned char carryFlag;
 };
 
-enum AddressingMode { Implicit, Immediate, ZeroPage, ZeroPageX, ZeroPageY, Relative, Absolute, AbsoluteX, AbsoluteY, Indirect, IndexedIndirect, IndirectIndexed };
+enum AddressingMode { Implicit, Immediate, ZeroPage, ZeroPageX, ZeroPageY, Relative, Absolute, AbsoluteX, AbsoluteY, Indirect, IndexedIndirect, IndirectIndexed, Accumulator };
 
 void brk(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state) 
 {
@@ -153,8 +153,10 @@ int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressing
   }
   else
   {
-    printf("ERROR: Need to implement a new addressing mode. [1]\n");
+    printf("ERROR: Need to implement a new addressing mode.\n");
   }
+
+  printf("Memory address: %x\n", *memoryAddress);
 
   return length;
 }
@@ -182,6 +184,8 @@ char *addressingModeString(enum AddressingMode addressingMode)
 {
   switch(addressingMode)
   {
+    case Accumulator:
+      return "Accumulator";
     case Implicit:
       return "Implicit";
     case Immediate:
@@ -207,6 +211,8 @@ char *addressingModeString(enum AddressingMode addressingMode)
     case IndirectIndexed:
       return "IndirectIndexed";
   }
+
+  return "Unknown";
 }
 
 void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
@@ -415,6 +421,185 @@ void bit(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void asl(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  if (addressingMode == Accumulator)
+  {
+    length = 0;
+    printInstruction(instr, length, state);
+    printf("-> ASL; %s;\n", addressingModeString(addressingMode));
+
+    unsigned int result = state->acc << 1;
+
+    state->acc = result;
+    state->carryFlag = (result > 255);
+    setZeroFlag(result, &state->zeroFlag);
+    setNegativeFlag(result, &state->negativeFlag);
+  }
+  else
+  {
+    unsigned int memoryAddress = 0;
+    length = getMemoryAddress(&memoryAddress, addressingMode, state);
+    unsigned char value = state->memory[memoryAddress];
+
+    printInstruction(instr, length, state);
+    printf("-> ASL; %s;\n", addressingModeString(addressingMode));
+
+    unsigned int bigResult = value << 1;
+    unsigned char smallResult = bigResult;
+
+    state->memory[memoryAddress] = smallResult;
+    state->carryFlag = (bigResult > 255);
+    setZeroFlag(smallResult, &state->zeroFlag);
+    setNegativeFlag(smallResult, &state->negativeFlag);
+  }
+
+  state->pc += (1 + length);
+}
+
+void asr(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  if (addressingMode == Accumulator)
+  {
+    length = 0;
+    printInstruction(instr, length, state);
+    printf("-> ASR; %s;\n", addressingModeString(addressingMode));
+
+    unsigned int result = state->acc >> 1;
+
+    state->carryFlag = (state->acc & 0x01) != 0;
+    state->acc = result;
+    setZeroFlag(result, &state->zeroFlag);
+    setNegativeFlag(result, &state->negativeFlag);
+  }
+  else
+  {
+    printf("ASR - Not Yet Implemented\n");
+  }
+
+  state->pc += (1 + length);
+}
+
+void rol(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  if (addressingMode == Accumulator)
+  {
+    length = 0;
+    printInstruction(instr, length, state);
+    printf("-> ROL; %s;\n", addressingModeString(addressingMode));
+
+    unsigned char result = state->acc << 1;
+
+    unsigned char oldCarryFlag = state->carryFlag;
+    state->carryFlag = (state->acc & 0x80) != 0;  // save bit 7 into the carry flag
+    state->acc = result;
+    state->acc = state->acc | oldCarryFlag;  // make bit 0 have the value of the old carry flag
+    setZeroFlag(state->acc, &state->zeroFlag);
+    setNegativeFlag(state->acc, &state->negativeFlag);
+  }
+  else
+  {
+    unsigned int memoryAddress = 0;
+    length = getMemoryAddress(&memoryAddress, addressingMode, state);
+    unsigned char value = state->memory[memoryAddress];
+
+    printInstruction(instr, length, state);
+    printf("-> ROL; %s; rotate left of value %02x\n", addressingModeString(addressingMode), value);
+
+    unsigned char oldCarryFlag = state->carryFlag;
+    unsigned char result = value << 1;
+    result = result | oldCarryFlag;  // make bit 0 have the value of the old carry flag
+
+    state->carryFlag = (value & 0x80) != 0;  // save bit 7 into the carry flag
+    state->memory[memoryAddress] = result;
+    setZeroFlag(result, &state->zeroFlag);
+    setNegativeFlag(result, &state->negativeFlag);
+  }
+
+  state->pc += (1 + length);
+}
+
+void ror(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+
+  unsigned char *value;
+
+  if (addressingMode == Accumulator)
+  {
+    length = 0;
+    value = &state->acc;
+  }
+  else
+  {
+    unsigned int memoryAddress = 0;
+    length = getMemoryAddress(&memoryAddress, addressingMode, state);
+    value = &state->memory[memoryAddress];
+  }
+
+  printInstruction(instr, length, state);
+  printf("-> ROR; %s; rotate right of value %02x\n", addressingModeString(addressingMode), *value);
+
+  unsigned char oldBitZero = (*value & 0x01) != 0; 
+  unsigned char result = *value >> 1;
+  // make bit 7 have the value of the current carry flag
+  if (state->carryFlag == 1)
+  {
+    result = result | 0x80;
+  }
+  else
+  {
+    result = result & 0x7F;
+  }
+
+  state->carryFlag = oldBitZero;
+  *value = result;
+  setZeroFlag(result, &state->zeroFlag);
+  setNegativeFlag(result, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void lsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  if (addressingMode == Accumulator)
+  {
+    printf("LSR - Not Yet Implemented\n");
+  }
+  else
+  {
+    unsigned int memoryAddress = 0;
+    length = getMemoryAddress(&memoryAddress, addressingMode, state);
+    unsigned char value = state->memory[memoryAddress];
+
+    printInstruction(instr, length, state);
+    printf("-> LSR; %s; logical shift right of value %02x\n", addressingModeString(addressingMode), value);
+
+    unsigned char oldBitZero = (value & 0x01) != 0; 
+    unsigned char result = value >> 1;
+
+    result = result & 0x7F;  // clear bit 7
+    state->memory[memoryAddress] = result;
+    state->carryFlag = oldBitZero;
+    setZeroFlag(result, &state->zeroFlag);
+    setNegativeFlag(result, &state->negativeFlag);
+  }
+
+  state->pc += (1 + length);
+}
+
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
@@ -422,18 +607,18 @@ int main(int argc, char **argv)
   // instruction table
   void (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
 //  0     1     2     3      4     5     6     7     8     9     A     B     C     D     E     F 
-    &brk, 0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 0
+    &brk, 0,    0,    0,     0,    0,    &asl, 0,    0,    0, &asl,    0,    0,    0,    0,    0, // 0
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 1
-    0,    0,    0,    0,  &bit,    0,    0,    0,    0,    0,    0,    0, &bit,    0,    0,    0, // 2
+    0,    0,    0,    0,  &bit,    0,    &rol, 0,    0,    0, &rol,    0, &bit,    0,    0,    0, // 2
     0,    0,    0,    0,     0,    0,    0,    0, &sec,    0,    0,    0,    0,    0,    0,    0, // 3
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 4
+    0,    0,    0,    0,     0,    0,    &lsr, 0,    0,    0, &asr,    0,    0,    0,    0,    0, // 4
     0,    0,    0,    0,     0,    0,    0,    0, &cli,    0,    0,    0,    0,    0,    0,    0, // 5
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 6
+    0,    0,    0,    0,     0,    0,    &ror, 0,    0,    0, &ror,    0,    0,    0,    0,    0, // 6
     0,    0,    0,    0,     0,    0,    0,    0, &sei,    0,    0,    0,    0,    0,    0,    0, // 7
-    0,    &sta, 0,    0,  &sty, &sta, &stx,    0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
-    0,    &sta, 0,    0,  &sty, &sta, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
-    &ldy, &lda, &ldx, 0,  &ldy, &lda, &ldx,    0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
-    0,    &lda, 0,    0,  &ldy, &lda, &ldx,    0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
+    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
+    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
+    &ldy, &lda, &ldx, 0,  &ldy, &lda,    &ldx, 0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
+    0,    &lda, 0,    0,  &ldy, &lda,    &ldx, 0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
     &cpy, &cmp, 0,    0,  &cpy, &cmp,    0,    0,    0, &cmp,    0,    0, &cpy, &cmp,    0,    0, // C
     0,    &cmp, 0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
     &cpx, 0,    0,    0,  &cpx,    0,    0,    0,    0,    0,    0,    0, &cpx,    0,    0,    0, // E
@@ -442,21 +627,21 @@ int main(int argc, char **argv)
 
   enum AddressingMode addressingModes[256] = {
     //  0            1                2                3                4                5                6                7                8                9                A                B                C                D                E                F 
-    Implicit,        0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 0
+    Implicit,        0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,     Accumulator,               0,               0,               0,               0,               0, // 0
     0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 1
-    0,               0,               0,               0,        ZeroPage,               0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // 2
+    0,               0,               0,               0,               ZeroPage,        0,               ZeroPage,        0,               0,               0,     Accumulator,               0,        Absolute,               0,               0,               0, // 2
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 3
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 4
+    0,               0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,     Accumulator,               0,               0,               0,               0,               0, // 4
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 5
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 6
+    0,               0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,     Accumulator,               0,               0,               0,               0,               0, // 6
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 7
-    0,               IndexedIndirect, 0,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
-    0,               IndirectIndexed, 0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
-    Immediate,       IndexedIndirect, Immediate,       0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
-    0,               IndirectIndexed, 0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
-    Immediate,       IndexedIndirect, 0,               0,        ZeroPage,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
+    0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
+    0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
+    Immediate,       IndexedIndirect, Immediate,       0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
+    0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
+    Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
-    Immediate,       0,               0,               0,        ZeroPage,               0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // E
+    Immediate,       0,               0,               0,               ZeroPage,        0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // E
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
   };
 
@@ -950,7 +1135,7 @@ int main(int argc, char **argv)
 
     if (initialPc == state.pc) {
       printf("ERROR: did not move to a new instruction\n");
-      printf("memory 0200: %02x\n", memory[0x0200]);
+      printf("test number: %02x\n", memory[0x0200]);
       return(0);
     }
 
@@ -958,7 +1143,7 @@ int main(int argc, char **argv)
 
     if (instructionsExecuted > 900000) {
       printf("Stopping due to instruction limit.\n");
-      printf("memory 0200: %02x\n", memory[0x0200]);
+      printf("test number: %02x\n", memory[0x0200]);
       return(0);
     }
   }
@@ -977,5 +1162,6 @@ int main(int argc, char **argv)
 
   return(0);
 }
+
 
 
