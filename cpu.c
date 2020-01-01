@@ -396,6 +396,25 @@ void cpy(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void bit(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> BIT; %s; AND acc %02x and value %02x\n", addressingModeString(addressingMode), state->acc, value);
+
+  unsigned char result = state->acc & value;
+
+  setZeroFlag(result, &state->zeroFlag);
+  state->overflowFlag = (value & 0x40) != 0;
+  setNegativeFlag(value, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
@@ -405,7 +424,7 @@ int main(int argc, char **argv)
 //  0     1     2     3      4     5     6     7     8     9     A     B     C     D     E     F 
     &brk, 0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 0
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 1
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 2
+    0,    0,    0,    0,  &bit,    0,    0,    0,    0,    0,    0,    0, &bit,    0,    0,    0, // 2
     0,    0,    0,    0,     0,    0,    0,    0, &sec,    0,    0,    0,    0,    0,    0,    0, // 3
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 4
     0,    0,    0,    0,     0,    0,    0,    0, &cli,    0,    0,    0,    0,    0,    0,    0, // 5
@@ -415,7 +434,7 @@ int main(int argc, char **argv)
     0,    &sta, 0,    0,  &sty, &sta, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
     &ldy, &lda, &ldx, 0,  &ldy, &lda, &ldx,    0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
     0,    &lda, 0,    0,  &ldy, &lda, &ldx,    0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
-    &cpy, 0,    0,    0,  &cpy, &cmp,    0,    0,    0, &cmp,    0,    0, &cpy, &cmp,    0,    0, // C
+    &cpy, &cmp, 0,    0,  &cpy, &cmp,    0,    0,    0, &cmp,    0,    0, &cpy, &cmp,    0,    0, // C
     0,    &cmp, 0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
     &cpx, 0,    0,    0,  &cpx,    0,    0,    0,    0,    0,    0,    0, &cpx,    0,    0,    0, // E
     0,    0,    0,    0,     0,    0,    0,    0, &sed,    0,    0,    0,    0,    0,    0,    0 //  F
@@ -425,7 +444,7 @@ int main(int argc, char **argv)
     //  0            1                2                3                4                5                6                7                8                9                A                B                C                D                E                F 
     Implicit,        0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 0
     0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 1
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 2
+    0,               0,               0,               0,        ZeroPage,               0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // 2
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 3
     0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 4
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 5
@@ -435,7 +454,7 @@ int main(int argc, char **argv)
     0,               IndirectIndexed, 0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
     Immediate,       IndexedIndirect, Immediate,       0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
     0,               IndirectIndexed, 0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
-    Immediate,       0,               0,               0,        ZeroPage,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
+    Immediate,       IndexedIndirect, 0,               0,        ZeroPage,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
     Immediate,       0,               0,               0,        ZeroPage,               0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // E
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
