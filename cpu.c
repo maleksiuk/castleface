@@ -380,6 +380,24 @@ void cpx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void cpy(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> CPY; %s; compare value %x to y value %x\n", addressingModeString(addressingMode), value, state->yRegister);
+
+  unsigned char result = state->yRegister - value;
+  setZeroFlag(result, &state->zeroFlag);
+  state->carryFlag = (state->yRegister >= value);
+  setNegativeFlag(result, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
@@ -396,12 +414,12 @@ int main(int argc, char **argv)
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 6
     0,    0,    0,    0,     0,    0,    0,    0, &sei,    0,    0,    0,    0,    0,    0,    0, // 7
     0,    0,    0,    0,  &sty, &sta, &stx,    0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
-    0,    0,    0,    0,  &sty,    0, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
+    0,    0,    0,    0,  &sty, &sta, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
     &ldy, 0, &ldx,    0,  &ldy, &lda, &ldx,    0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
     0,    0,    0,    0,  &ldy, &lda, &ldx,    0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
-    0,    0,    0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // C
+    &cpy, 0,    0,    0,  &cpy, &cmp,    0,    0,    0, &cmp,    0,    0, &cpy, &cmp,    0,    0, // C
     0,    0,    0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
-    &cpx, 0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // E
+    &cpx, 0,    0,    0,  &cpx,    0,    0,    0,    0,    0,    0,    0, &cpx,    0,    0,    0, // E
     0,    0,    0,    0,     0,    0,    0,    0, &sed,    0,    0,    0,    0,    0,    0,    0 //  F
   };
 
@@ -416,12 +434,12 @@ int main(int argc, char **argv)
     0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 6
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 7
     0,               0,               0,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
-    0,               0,               0,               0,       ZeroPageX,               0,               ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
+    0,               0,               0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
     Immediate,       0,       Immediate,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
     0,               0,               0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
-    0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,               0,               Absolute,        0,               0, // C
+    Immediate,       0,               0,               0,        ZeroPage,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
     0,               0,               0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
-    Immediate,       0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // E
+    Immediate,       0,               0,               0,        ZeroPage,               0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // E
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
   };
 
