@@ -94,12 +94,16 @@ void brk(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc = (highNibble << 8) | lowNibble;
 }
 
-// TODO: make getOperandValue use this
 int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
 
-  if (addressingMode == Absolute)
+  if (addressingMode == Immediate)
+  {
+    length = 1;
+    *memoryAddress = state->pc+1;
+  }
+  else if (addressingMode == Absolute)
   {
     length = 2;
     *memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
@@ -133,9 +137,23 @@ int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressing
     *memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
     *memoryAddress += state->yRegister;
   }
+  else if (addressingMode == IndirectIndexed)
+  {
+    length = 1;
+    unsigned char operand = state->memory[state->pc+1]; 
+    *memoryAddress = (state->memory[operand+1] << 8) | state->memory[operand];
+    *memoryAddress += state->yRegister;
+  }
+  else if (addressingMode == IndexedIndirect)
+  {
+    length = 1;
+    unsigned char operand = state->memory[state->pc+1]; 
+    unsigned char wrapAroundMemoryAddress = operand + state->xRegister;
+    *memoryAddress = (state->memory[wrapAroundMemoryAddress+1] << 8) | state->memory[wrapAroundMemoryAddress];
+  }
   else
   {
-    printf("ERROR: Need to implement a new addressing mode.\n");
+    printf("ERROR: Need to implement a new addressing mode. [1]\n");
   }
 
   return length;
@@ -143,29 +161,9 @@ int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressing
 
 int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, struct Computer *state)
 {
-  int length = 0;
-
-  if (addressingMode == Absolute)
-  {
-    length = 2;
-    unsigned int memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
-    *value = state->memory[memoryAddress];
-  }
-  else if (addressingMode == Immediate)
-  {
-    length = 1;
-    *value = state->memory[state->pc+1];
-  }
-  else if (addressingMode == ZeroPage || addressingMode == ZeroPageX || addressingMode == ZeroPageY || addressingMode == AbsoluteX || addressingMode == AbsoluteY)
-  {
-    unsigned int memoryAddress = 0;
-    length = getMemoryAddress(&memoryAddress, addressingMode, state);
-    *value = state->memory[memoryAddress];
-  }
-  else
-  {
-    printf("ERROR: Need to implement a new addressing mode.\n");
-  }
+  unsigned int memoryAddress = 0;
+  int length = getMemoryAddress(&memoryAddress, addressingMode, state);
+  *value = state->memory[memoryAddress];
 
   return length;
 }
@@ -413,12 +411,12 @@ int main(int argc, char **argv)
     0,    0,    0,    0,     0,    0,    0,    0, &cli,    0,    0,    0,    0,    0,    0,    0, // 5
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 6
     0,    0,    0,    0,     0,    0,    0,    0, &sei,    0,    0,    0,    0,    0,    0,    0, // 7
-    0,    0,    0,    0,  &sty, &sta, &stx,    0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
-    0,    0,    0,    0,  &sty, &sta, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
-    &ldy, 0, &ldx,    0,  &ldy, &lda, &ldx,    0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
-    0,    0,    0,    0,  &ldy, &lda, &ldx,    0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
+    0,    &sta, 0,    0,  &sty, &sta, &stx,    0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
+    0,    &sta, 0,    0,  &sty, &sta, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
+    &ldy, &lda, &ldx, 0,  &ldy, &lda, &ldx,    0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
+    0,    &lda, 0,    0,  &ldy, &lda, &ldx,    0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
     &cpy, 0,    0,    0,  &cpy, &cmp,    0,    0,    0, &cmp,    0,    0, &cpy, &cmp,    0,    0, // C
-    0,    0,    0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
+    0,    &cmp, 0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
     &cpx, 0,    0,    0,  &cpx,    0,    0,    0,    0,    0,    0,    0, &cpx,    0,    0,    0, // E
     0,    0,    0,    0,     0,    0,    0,    0, &sed,    0,    0,    0,    0,    0,    0,    0 //  F
   };
@@ -433,12 +431,12 @@ int main(int argc, char **argv)
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 5
     0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 6
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 7
-    0,               0,               0,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
-    0,               0,               0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
-    Immediate,       0,       Immediate,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
-    0,               0,               0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
+    0,               IndexedIndirect, 0,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
+    0,               IndirectIndexed, 0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
+    Immediate,       IndexedIndirect, Immediate,       0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
+    0,               IndirectIndexed, 0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
     Immediate,       0,               0,               0,        ZeroPage,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
-    0,               0,               0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
     Immediate,       0,               0,               0,        ZeroPage,               0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // E
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
   };
