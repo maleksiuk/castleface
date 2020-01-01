@@ -242,6 +242,22 @@ void ldx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void ldy(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> LDY; %s; Set y to value %02x\n", addressingModeString(addressingMode), value);
+
+  state->yRegister = value;
+  setZeroFlag(state->yRegister, &state->zeroFlag);
+  setNegativeFlag(state->yRegister, &state->negativeFlag);
+  state->pc += (1 + length);
+}
+
 void sta(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   unsigned int memoryAddress = 0;
@@ -263,6 +279,18 @@ void stx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printf("-> STX; %s; Set memory address %x to x value %02x\n", addressingModeString(addressingMode), memoryAddress, state->xRegister);
 
   state->memory[memoryAddress] = state->xRegister;
+  state->pc += (1 + length);
+}
+
+void sty(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned int memoryAddress = 0;
+  int length = getMemoryAddress(&memoryAddress, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> STY; %s; Set memory address %x to y value %02x\n", addressingModeString(addressingMode), memoryAddress, state->yRegister);
+
+  state->memory[memoryAddress] = state->yRegister;
   state->pc += (1 + length);
 }
 
@@ -334,6 +362,24 @@ void cmp(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void cpx(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  unsigned char value = 0;
+
+  length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> CPX; %s; compare value %x to x value %x\n", addressingModeString(addressingMode), value, state->xRegister);
+
+  unsigned char result = state->xRegister - value;
+  setZeroFlag(result, &state->zeroFlag);
+  state->carryFlag = (state->xRegister >= value);
+  setNegativeFlag(result, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
@@ -349,13 +395,13 @@ int main(int argc, char **argv)
     0,    0,    0,    0,     0,    0,    0,    0, &cli,    0,    0,    0,    0,    0,    0,    0, // 5
     0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 6
     0,    0,    0,    0,     0,    0,    0,    0, &sei,    0,    0,    0,    0,    0,    0,    0, // 7
-    0,    0,    0,    0,     0, &sta, &stx,    0,    0,    0,    0,    0,    0, &sta,    0,    0, // 8
-    0,    0,    0,    0,     0,    0, &stx,    0,    0, &sta,    0,    0,    0,    0,    0,    0, // 9
-    0,    0, &ldx,    0,     0, &lda, &ldx,    0,    0, &lda,    0,    0,    0, &lda,    0,    0, // A
-    0,    0,    0,    0,     0,    0, &ldx,    0, &clv, &lda,    0,    0,    0, &lda, &ldx,    0, // B
-    0,    0,    0,    0,     0,    0,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // C
-    0,    0,    0,    0,     0,    0,    0,    0,    0, &cmp,    0,    0,    0,    0,    0,    0, // D
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // E
+    0,    0,    0,    0,  &sty, &sta, &stx,    0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
+    0,    0,    0,    0,  &sty,    0, &stx,    0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
+    &ldy, 0, &ldx,    0,  &ldy, &lda, &ldx,    0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
+    0,    0,    0,    0,  &ldy, &lda, &ldx,    0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
+    0,    0,    0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // C
+    0,    0,    0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
+    &cpx, 0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // E
     0,    0,    0,    0,     0,    0,    0,    0, &sed,    0,    0,    0,    0,    0,    0,    0 //  F
   };
 
@@ -369,13 +415,13 @@ int main(int argc, char **argv)
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 5
     0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 6
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 7
-    0,               0,               0,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,               0,               Absolute,        0,               0, // 8
-    0,               0,               0,               0,               0,               0,               ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               0,               0,               0, // 9
-    0,               0,       Immediate,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,               0,               Absolute,        0,               0, // A
-    0,               0,               0,               0,               0,               0,               ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteY,       0, // B
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               Immediate,       0,               0,               0,               Absolute,        0,               0, // C
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               AbsoluteY,       0,               0,               0,               0,               0,               0, // D
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // E
+    0,               0,               0,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
+    0,               0,               0,               0,       ZeroPageX,               0,               ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
+    Immediate,       0,       Immediate,               0,        ZeroPage,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
+    0,               0,               0,               0,       ZeroPageX,               ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
+    0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,               Immediate,       0,               0,               0,               Absolute,        0,               0, // C
+    0,               0,               0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
+    Immediate,       0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // E
     0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
   };
 
@@ -617,28 +663,6 @@ int main(int argc, char **argv)
       setNegativeFlag(result, &state.negativeFlag);
       printf("%02x %02x\n", instr, buffer[i+1]);
       printf("-> CPY #%02x (compare value %x to y value %x)\n", operand, operand, state.yRegister);
-      state.pc += 2;
-    }
-    // CPX; Compare x with another value; immediate; Len 2; Time 2
-    else if (instr == 0xE0)
-    {
-      int operand = buffer[i+1];
-      unsigned char result = state.xRegister - operand;
-      state.zeroFlag = (result == 0);
-      state.carryFlag = (state.xRegister >= operand);
-      setNegativeFlag(result, &state.negativeFlag);
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> CPX #%02x (compare value %x to x value %x)\n", operand, operand, state.xRegister);
-      state.pc += 2;
-    }
-    // LDY; Load Y register with value; immediate; Len 2; Time 2
-    else if (instr == 0xA0)
-    {
-      state.yRegister = buffer[i+1];
-      state.zeroFlag = (state.yRegister == 0);
-      setNegativeFlag(state.yRegister, &state.negativeFlag);
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> LDY #%x -- (load Y with value %x)\n", state.yRegister, state.yRegister);
       state.pc += 2;
     }
     // DEY; Decrement Y register; Len 1; Time 2
