@@ -572,33 +572,117 @@ void ror(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 void lsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
-  unsigned char value = 0;
+  unsigned char *value;
 
   if (addressingMode == Accumulator)
   {
-    printf("LSR - Not Yet Implemented\n");
+    length = 0;
+    value = &state->acc;
   }
   else
   {
     unsigned int memoryAddress = 0;
     length = getMemoryAddress(&memoryAddress, addressingMode, state);
-    unsigned char value = state->memory[memoryAddress];
-
-    printInstruction(instr, length, state);
-    printf("-> LSR; %s; logical shift right of value %02x\n", addressingModeString(addressingMode), value);
-
-    unsigned char oldBitZero = (value & 0x01) != 0; 
-    unsigned char result = value >> 1;
-
-    result = result & 0x7F;  // clear bit 7
-    state->memory[memoryAddress] = result;
-    state->carryFlag = oldBitZero;
-    setZeroFlag(result, &state->zeroFlag);
-    setNegativeFlag(result, &state->negativeFlag);
+    value = &state->memory[memoryAddress];
   }
+
+  printInstruction(instr, length, state);
+  printf("-> LSR; %s; logical shift right of value %02x\n", addressingModeString(addressingMode), *value);
+
+  unsigned char oldBitZero = (*value & 0x01) != 0; 
+  unsigned char result = *value >> 1;
+
+  result = result & 0x7F;  // clear bit 7
+  *value = result;
+  state->carryFlag = oldBitZero;
+  setZeroFlag(result, &state->zeroFlag);
+  setNegativeFlag(result, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
+
+void inc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned int memoryAddress = 0;
+  int length = getMemoryAddress(&memoryAddress, addressingMode, state);
+  unsigned char *value = &state->memory[memoryAddress];
+
+  *value = *value + 1;
+
+  printInstruction(instr, length, state);
+  printf("-> INC; %s; increment value at memory address %x to be %02x\n", addressingModeString(addressingMode), memoryAddress, *value);
+
+  setZeroFlag(*value, &state->zeroFlag);
+  setNegativeFlag(*value, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void dec(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned int memoryAddress = 0;
+  int length = getMemoryAddress(&memoryAddress, addressingMode, state);
+  unsigned char *value = &state->memory[memoryAddress];
+
+  *value = *value - 1;
+
+  printInstruction(instr, length, state);
+  printf("-> DEC; %s; decrement value at memory address %x to be %02x\n", addressingModeString(addressingMode), memoryAddress, *value);
+
+  setZeroFlag(*value, &state->zeroFlag);
+  setNegativeFlag(*value, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void and(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned char value = 0;
+  int length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> AND; %s; AND acc value with %02x\n", addressingModeString(addressingMode), value);
+
+  state->acc = state->acc & value;
+
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void eor(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned char value = 0;
+  int length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> EOR; %s; exclusive or between acc and %02x\n", addressingModeString(addressingMode), value);
+
+  state->acc = state->acc ^ value;
+
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void ora(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned char value = 0;
+  int length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> ORA; %s; logical inclusive OR between acc and %02x\n", addressingModeString(addressingMode), value);
+
+  state->acc = state->acc | value;
+
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
 
 int main(int argc, char **argv) 
 {
@@ -607,42 +691,42 @@ int main(int argc, char **argv)
   // instruction table
   void (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
 //  0     1     2     3      4     5     6     7     8     9     A     B     C     D     E     F 
-    &brk, 0,    0,    0,     0,    0,    &asl, 0,    0,    0, &asl,    0,    0,    0,    0,    0, // 0
-    0,    0,    0,    0,     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, // 1
-    0,    0,    0,    0,  &bit,    0,    &rol, 0,    0,    0, &rol,    0, &bit,    0,    0,    0, // 2
-    0,    0,    0,    0,     0,    0,    0,    0, &sec,    0,    0,    0,    0,    0,    0,    0, // 3
-    0,    0,    0,    0,     0,    0,    &lsr, 0,    0,    0, &asr,    0,    0,    0,    0,    0, // 4
-    0,    0,    0,    0,     0,    0,    0,    0, &cli,    0,    0,    0,    0,    0,    0,    0, // 5
-    0,    0,    0,    0,     0,    0,    &ror, 0,    0,    0, &ror,    0,    0,    0,    0,    0, // 6
-    0,    0,    0,    0,     0,    0,    0,    0, &sei,    0,    0,    0,    0,    0,    0,    0, // 7
+    &brk, &ora, 0,    0,     0, &ora,    &asl, 0,    0, &ora, &asl,    0,    0, &ora, &asl,    0, // 0
+    0,    &ora, 0,    0,     0, &ora,    &asl, 0,    0, &ora,    0,    0,    0, &ora, &asl,    0, // 1
+    0,    &and, 0,    0,  &bit, &and,    &rol, 0,    0, &and, &rol,    0, &bit, &and, &rol,    0, // 2
+    0,    &and, 0,    0,     0, &and,    &rol, 0, &sec, &and,    0,    0,    0, &and, &rol,    0, // 3
+    0,    &eor, 0,    0,     0, &eor,    &lsr, 0,    0, &eor, &lsr,    0,    0, &eor, &lsr,    0, // 4
+    0,    &eor, 0,    0,     0, &eor,    &lsr, 0, &cli, &eor,    0,    0,    0, &eor, &lsr,    0, // 5
+    0,    0,    0,    0,     0,    0,    &ror, 0,    0,    0, &ror,    0,    0,    0, &ror,    0, // 6
+    0,    0,    0,    0,     0,    0,    &ror, 0, &sei,    0,    0,    0,    0,    0, &ror,    0, // 7
     0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
     0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
     &ldy, &lda, &ldx, 0,  &ldy, &lda,    &ldx, 0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
     0,    &lda, 0,    0,  &ldy, &lda,    &ldx, 0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
-    &cpy, &cmp, 0,    0,  &cpy, &cmp,    0,    0,    0, &cmp,    0,    0, &cpy, &cmp,    0,    0, // C
-    0,    &cmp, 0,    0,     0, &cmp,    0,    0,    0, &cmp,    0,    0,    0, &cmp,    0,    0, // D
-    &cpx, 0,    0,    0,  &cpx,    0,    0,    0,    0,    0,    0,    0, &cpx,    0,    0,    0, // E
-    0,    0,    0,    0,     0,    0,    0,    0, &sed,    0,    0,    0,    0,    0,    0,    0 //  F
+    &cpy, &cmp, 0,    0,  &cpy, &cmp,    &dec, 0,    0, &cmp,    0,    0, &cpy, &cmp, &dec,    0, // C
+    0,    &cmp, 0,    0,     0, &cmp,    &dec, 0,    0, &cmp,    0,    0,    0, &cmp, &dec,    0, // D
+    &cpx, 0,    0,    0,  &cpx,    0,    &inc, 0,    0,    0,    0,    0, &cpx,    0, &inc,    0, // E
+    0,    0,    0,    0,     0,    0,    &inc, 0, &sed,    0,    0,    0,    0,    0, &inc,    0  // F
   };
 
   enum AddressingMode addressingModes[256] = {
     //  0            1                2                3                4                5                6                7                8                9                A                B                C                D                E                F 
-    Implicit,        0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,     Accumulator,               0,               0,               0,               0,               0, // 0
-    0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0,               0, // 1
-    0,               0,               0,               0,               ZeroPage,        0,               ZeroPage,        0,               0,               0,     Accumulator,               0,        Absolute,               0,               0,               0, // 2
-    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 3
-    0,               0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,     Accumulator,               0,               0,               0,               0,               0, // 4
-    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 5
-    0,               0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,     Accumulator,               0,               0,               0,               0,               0, // 6
-    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0, // 7
+    Implicit,        IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       Accumulator,     0,               0,               Absolute,        Absolute,        0, // 0
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 1
+    0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       Accumulator,     0,        Absolute,               Absolute,        Absolute,        0, // 2
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 3
+    0,               IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       Accumulator,     0,               0,               Absolute,        Absolute,        0, // 4
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 5
+    0,               0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,               Accumulator,     0,               0,               0,               Absolute,        0, // 6
+    0,               0,               0,               0,               0,               0,               ZeroPageX,       0,               Implicit,        0,               0,               0,               0,               0,               AbsoluteX,       0, // 7
     0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
     0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
     Immediate,       IndexedIndirect, Immediate,       0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
     0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
-    Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        0,               0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        0,               0, // C
-    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       0,               0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // D
-    Immediate,       0,               0,               0,               ZeroPage,        0,               0,               0,               0,               0,               0,               0,        Absolute,               0,               0,               0, // E
-    0,               0,               0,               0,               0,               0,               0,               0,               Implicit,        0,               0,               0,               0,               0,               0,               0 //  F
+    Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // C
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // D
+    Immediate,       0,               0,               0,               ZeroPage,        0,               ZeroPage,        0,               0,               0,               0,               0,        Absolute,               0,               Absolute,        0, // E
+    0,               0,               0,               0,               0,               0,               ZeroPageX,       0,               Implicit,        0,               0,               0,               0,               0,               AbsoluteX,       0 //  F
   };
 
   unsigned char buffer[262160];
@@ -1032,28 +1116,6 @@ int main(int argc, char **argv)
         state.overflowFlag = (signedResult > 127 || signedResult < -128);
       }
 
-      state.pc += 2;
-    }
-    // EOR; Len 2; Time 2
-    else if (instr == 0x49)
-    {
-      unsigned char operand = buffer[i+1];
-      state.acc = state.acc ^ operand;
-      state.zeroFlag = (state.acc == 0);
-      setNegativeFlag(state.acc, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> EOR #%02x -- (exclusive or between acc and %02x)\n", operand, operand);
-      state.pc += 2;
-    }
-    // ORA; Logical Inclusive OR; immediate; Len 2; Time 2
-    else if (instr == 0x09)
-    {
-      unsigned char operand = buffer[i+1];
-      state.acc = state.acc | operand;
-      state.zeroFlag = (state.acc == 0);
-      setNegativeFlag(state.acc, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> ORA #%02x -- (inclusive or between acc and %02x)\n", operand, operand);
       state.pc += 2;
     }
     // DEX; Len 1; Time 2
