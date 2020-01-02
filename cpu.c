@@ -683,6 +683,60 @@ void ora(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void add(unsigned char value, struct Computer *state)
+{
+  unsigned char originalCarryFlag = state->carryFlag;
+  unsigned int result = state->acc + value + originalCarryFlag;
+  unsigned char overflowFlag = ((state->acc^result)&(value^result)&0x80) != 0;
+  state->acc = result;
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+  state->carryFlag = (result > 255);
+
+  // See http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+  state->overflowFlag = overflowFlag;
+}
+
+void adc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned char value = 0;
+  int length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> ADC; %s; add with carry: value %02x\n", addressingModeString(addressingMode), value);
+
+  if (state->decimalFlag == 1)
+  {
+    printf("Error: adc decimal mode not supported.\n");
+  }
+  else
+  {
+    add(value, state);
+  }
+
+  state->pc += (1 + length);
+}
+
+void sbc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  unsigned char value = 0;
+  int length = getOperandValue(&value, addressingMode, state);
+
+  printInstruction(instr, length, state);
+  printf("-> SBC; %s; subtract with carry value %x\n", addressingModeString(addressingMode), value);
+
+  if (state->decimalFlag == 1)
+  {
+    printf("Error: sbc decimal mode not supported.\n");
+  }
+  else
+  {
+    add(value ^ 0xFF, state);
+  }
+
+  state->pc += (1 + length);
+}
+
 
 int main(int argc, char **argv) 
 {
@@ -697,16 +751,16 @@ int main(int argc, char **argv)
     0,    &and, 0,    0,     0, &and,    &rol, 0, &sec, &and,    0,    0,    0, &and, &rol,    0, // 3
     0,    &eor, 0,    0,     0, &eor,    &lsr, 0,    0, &eor, &lsr,    0,    0, &eor, &lsr,    0, // 4
     0,    &eor, 0,    0,     0, &eor,    &lsr, 0, &cli, &eor,    0,    0,    0, &eor, &lsr,    0, // 5
-    0,    0,    0,    0,     0,    0,    &ror, 0,    0,    0, &ror,    0,    0,    0, &ror,    0, // 6
-    0,    0,    0,    0,     0,    0,    &ror, 0, &sei,    0,    0,    0,    0,    0, &ror,    0, // 7
+    0,    &adc, 0,    0,     0, &adc,    &ror, 0,    0, &adc, &ror,    0,    0, &adc, &ror,    0, // 6
+    0,    &adc, 0,    0,     0, &adc,    &ror, 0, &sei, &adc,    0,    0,    0, &adc, &ror,    0, // 7
     0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0,    0,    0,    0, &sty, &sta, &stx,    0, // 8
     0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
     &ldy, &lda, &ldx, 0,  &ldy, &lda,    &ldx, 0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
     0,    &lda, 0,    0,  &ldy, &lda,    &ldx, 0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
     &cpy, &cmp, 0,    0,  &cpy, &cmp,    &dec, 0,    0, &cmp,    0,    0, &cpy, &cmp, &dec,    0, // C
     0,    &cmp, 0,    0,     0, &cmp,    &dec, 0,    0, &cmp,    0,    0,    0, &cmp, &dec,    0, // D
-    &cpx, 0,    0,    0,  &cpx,    0,    &inc, 0,    0,    0,    0,    0, &cpx,    0, &inc,    0, // E
-    0,    0,    0,    0,     0,    0,    &inc, 0, &sed,    0,    0,    0,    0,    0, &inc,    0  // F
+    &cpx, &sbc, 0,    0,  &cpx, &sbc,    &inc, 0,    0, &sbc,    0,    0, &cpx, &sbc, &inc,    0, // E
+    0,    &sbc, 0,    0,     0, &sbc,    &inc, 0, &sed, &sbc,    0,    0,    0, &sbc, &inc,    0  // F
   };
 
   enum AddressingMode addressingModes[256] = {
@@ -717,22 +771,23 @@ int main(int argc, char **argv)
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 3
     0,               IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       Accumulator,     0,               0,               Absolute,        Absolute,        0, // 4
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 5
-    0,               0,               0,               0,               0,               0,               ZeroPage,        0,               0,               0,               Accumulator,     0,               0,               0,               Absolute,        0, // 6
-    0,               0,               0,               0,               0,               0,               ZeroPageX,       0,               Implicit,        0,               0,               0,               0,               0,               AbsoluteX,       0, // 7
+    0,               IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               0,               Immediate,       Accumulator,     0,               0,               Absolute,        Absolute,        0, // 6
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 7
     0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
     0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
     Immediate,       IndexedIndirect, Immediate,       0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
     0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
     Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // C
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // D
-    Immediate,       0,               0,               0,               ZeroPage,        0,               ZeroPage,        0,               0,               0,               0,               0,        Absolute,               0,               Absolute,        0, // E
-    0,               0,               0,               0,               0,               0,               ZeroPageX,       0,               Implicit,        0,               0,               0,               0,               0,               AbsoluteX,       0 //  F
+    Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // E
+    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0  // F
   };
 
   unsigned char buffer[262160];
   FILE *file;
 
   file = fopen("6502_functional_test.bin", "rb");
+  //file = fopen("test.out", "rb");
 
   fread(buffer, sizeof(buffer), 1, file);
 
@@ -1089,35 +1144,6 @@ int main(int argc, char **argv)
 
       state.pc += 2;
     }
-    // ADC; Add memory to acc with carry; Len 2, Time 2
-    // There are some test programs here I should try: http://www.6502.org/tutorials/vflag.html
-    else if (instr == 0x69)
-    {
-      unsigned char operand = buffer[i+1];
-      printf("%02x %02x\n", instr, operand);
-
-      if (state.decimalFlag == 1)
-      {
-        // Apparently the NES doesn't support decimal mode.
-      }
-      else
-      {
-        unsigned int result = state.acc + operand + state.carryFlag;
-        state.acc = result;
-        printf("-> ADC #%02x -- (add %02x and %02x to the acc, resulting in %02x)\n", operand, operand, state.carryFlag, state.acc);
-        state.zeroFlag = (state.acc == 0);
-        setNegativeFlag(state.acc, &state.negativeFlag);
-        state.carryFlag = (result > 255);
-
-        // TODO: Do this a better way. See // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
-        signed char signedAcc = state.acc;
-        signed char signedOperand = operand;
-        signed int signedResult = signedAcc + signedOperand;
-        state.overflowFlag = (signedResult > 127 || signedResult < -128);
-      }
-
-      state.pc += 2;
-    }
     // DEX; Len 1; Time 2
     else if (instr == 0xCA)
     {
@@ -1203,7 +1229,8 @@ int main(int argc, char **argv)
 
     instructionsExecuted++;
 
-    if (instructionsExecuted > 900000) {
+    if (instructionsExecuted > 1000000) {
+    //if (instructionsExecuted > 8) {
       printf("Stopping due to instruction limit.\n");
       printf("test number: %02x\n", memory[0x0200]);
       return(0);
