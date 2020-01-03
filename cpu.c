@@ -81,32 +81,6 @@ struct Computer
 
 enum AddressingMode { Implicit, Immediate, ZeroPage, ZeroPageX, ZeroPageY, Relative, Absolute, AbsoluteX, AbsoluteY, Indirect, IndexedIndirect, IndirectIndexed, Accumulator };
 
-void brk(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state) 
-{
-  state->pc++;
-  unsigned int pcToPushToStack = state->pc + 1;
-  pushToStack(pcToPushToStack >> 8, state->memory, &state->stackRegister);
-  pushToStack(pcToPushToStack, state->memory, &state->stackRegister);
-
-  // NV1BDIZC
-  // extract into function?
-  unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (1 << 4)
-    | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
-
-  /*processorStatus = processorStatus | 0x10;  // set break command flag*/
-  pushToStack(processorStatus, state->memory, &state->stackRegister);
-
-  state->interruptDisable = 1;
-
-  printf("%02x\n", instr);
-  printf("-> BRK -- (force interrupt)\n");
-
-  unsigned char lowNibble = (state->memory)[0xFFFE];
-  unsigned char highNibble = (state->memory)[0xFFFF];
-
-  state->pc = (highNibble << 8) | lowNibble;
-}
-
 int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
@@ -255,6 +229,55 @@ void printInstructionDescription(char *name, enum AddressingMode addressingMode,
 #endif
 }
 
+void brk(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state) 
+{
+  state->pc++;
+  unsigned int pcToPushToStack = state->pc + 1;
+  pushToStack(pcToPushToStack >> 8, state->memory, &state->stackRegister);
+  pushToStack(pcToPushToStack, state->memory, &state->stackRegister);
+
+  // NV1BDIZC
+  // extract into function?
+  unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (1 << 4)
+    | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
+
+  /*processorStatus = processorStatus | 0x10;  // set break command flag*/
+  pushToStack(processorStatus, state->memory, &state->stackRegister);
+
+  state->interruptDisable = 1;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("BRK", addressingMode, "force interrupt");
+
+  unsigned char lowNibble = (state->memory)[0xFFFE];
+  unsigned char highNibble = (state->memory)[0xFFFF];
+
+  state->pc = (highNibble << 8) | lowNibble;
+}
+
+void rti(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state) 
+{
+  unsigned char processorFlags = popFromStack(state->memory, &state->stackRegister);
+  unsigned char pcLowNibble = popFromStack(state->memory, &state->stackRegister);
+  unsigned char pcHighNibble = popFromStack(state->memory, &state->stackRegister);
+
+  state->carryFlag = (processorFlags & 0x01) != 0;
+  state->zeroFlag = (processorFlags & 0x02) != 0;
+  state->interruptDisable = (processorFlags & 0x04) != 0;
+  state->decimalFlag = (processorFlags & 0x08) != 0;
+  state->overflowFlag = (processorFlags & 0x40) != 0;
+  state->negativeFlag = (processorFlags & 0x80) != 0;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("RTI", addressingMode, "return from interrupt");
+
+  /*state.interruptDisable = 0;*/
+
+  state->pc = (pcHighNibble << 8) | pcLowNibble;
+}
+
 void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   unsigned char value = 0;
@@ -365,6 +388,16 @@ void sei(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstructionDescription("SEI", addressingMode, "set interrupt disable flag to 1");
 
   state->interruptDisable = 1;
+  state->pc += (1 + length);
+}
+
+void cld(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("CLD", addressingMode, "set decimal flag to 0");
+
+  state->decimalFlag = 0;
   state->pc += (1 + length);
 }
 
@@ -899,44 +932,64 @@ void pha(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
-void bpl(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
-{  
+signed char branchIfTrue(unsigned char val, unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
   int length = 1;
   printInstruction(instr, length, state);
+  signed char relativeDisplacement = state->memory[state->pc+1];
+  signed char branchedByRelativeDisplacement = 0;
 
-  if (state->negativeFlag == 0) 
+  if (val == 1) 
   {
-    // branch
-    signed char relativeDisplacement = state->memory[state->pc+1];
-    printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; did branch by %x", relativeDisplacement);
     state->pc += relativeDisplacement;
+    branchedByRelativeDisplacement = relativeDisplacement;
   } 
-  else 
-  {
-    // no branch
-    printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; did not branch");
-  }
 
   state->pc += (1 + length);
+
+  return branchedByRelativeDisplacement;
+}
+
+void beq(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{  
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 1, instr, addressingMode, state);
+  printInstructionDescription("BEQ", addressingMode, "branch if the zero flag is one; branched by %x", branchedByRelativeDisplacement);
+}
+
+void bcc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{  
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->carryFlag == 0, instr, addressingMode, state);
+  printInstructionDescription("BCC", addressingMode, "branch if the carry flag is zero; branched by %x", branchedByRelativeDisplacement);
+}
+
+void bcs(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{  
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->carryFlag == 1, instr, addressingMode, state);
+  printInstructionDescription("BCS", addressingMode, "branch if the carry flag is set; branched by %x", branchedByRelativeDisplacement);
+}
+
+void bvc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{  
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->overflowFlag == 0, instr, addressingMode, state);
+  printInstructionDescription("BVC", addressingMode, "branch if the overflow flag is zero; branched by %x", branchedByRelativeDisplacement);
+}
+
+void bvs(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{  
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->overflowFlag == 1, instr, addressingMode, state);
+  printInstructionDescription("BVS", addressingMode, "branch if the overflow flag is set; branched by %x", branchedByRelativeDisplacement);
+}
+
+void bpl(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{  
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->negativeFlag == 0, instr, addressingMode, state);
+  printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; branched by %x", branchedByRelativeDisplacement);
 }
 
 void bne(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  int length = 1;
-  printInstruction(instr, length, state);
-
-  if (state->zeroFlag == 0)
-  {
-    signed char relativeDisplacement = state->memory[state->pc+1];
-    printInstructionDescription("BNE", addressingMode, "branch if the zero flag is clear; did branch by %x", relativeDisplacement);
-    state->pc += relativeDisplacement;
-  }
-  else
-  {
-    printInstructionDescription("BNE", addressingMode, "branch if the zero flag is clear; did not branch");
-  }
-
-  state->pc += (1 + length);
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 0, instr, addressingMode, state);
+  printInstructionDescription("BNE", addressingMode, "branch if the zero flag is zero; branched by %x", branchedByRelativeDisplacement);
 }
 
 void jsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
@@ -1046,6 +1099,29 @@ void txa(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void txs(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  state->stackRegister = state->xRegister;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("TXS", addressingMode, "transfer X %x to stack reg", state->xRegister);
+
+  state->pc += (1 + length);
+}
+
+void tsx(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  state->xRegister = state->stackRegister;
+  setZeroFlag(state->xRegister, &state->zeroFlag);
+  setNegativeFlag(state->xRegister, &state->negativeFlag);
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("TSX", addressingMode, "transfer stack register %x to x reg", state->stackRegister);
+
+  state->pc += (1 + length);
+}
 
 int main(int argc, char **argv) 
 {
@@ -1058,18 +1134,18 @@ int main(int argc, char **argv)
     &bpl, &ora, 0,    0,     0, &ora,    &asl, 0, &clc, &ora,    0,    0,    0, &ora, &asl,    0, // 1
     &jsr, &and, 0,    0,  &bit, &and,    &rol, 0, &plp, &and, &rol,    0, &bit, &and, &rol,    0, // 2
     &bmi, &and, 0,    0,     0, &and,    &rol, 0, &sec, &and,    0,    0,    0, &and, &rol,    0, // 3
-    0,    &eor, 0,    0,     0, &eor,    &lsr, 0, &pha, &eor, &lsr,    0, &jmp, &eor, &lsr,    0, // 4
-    0,    &eor, 0,    0,     0, &eor,    &lsr, 0, &cli, &eor,    0,    0,    0, &eor, &lsr,    0, // 5
+    &rti, &eor, 0,    0,     0, &eor,    &lsr, 0, &pha, &eor, &lsr,    0, &jmp, &eor, &lsr,    0, // 4
+    &bvc, &eor, 0,    0,     0, &eor,    &lsr, 0, &cli, &eor,    0,    0,    0, &eor, &lsr,    0, // 5
     &rts, &adc, 0,    0,     0, &adc,    &ror, 0, &pla, &adc, &ror,    0, &jmp, &adc, &ror,    0, // 6
-    0,    &adc, 0,    0,     0, &adc,    &ror, 0, &sei, &adc,    0,    0,    0, &adc, &ror,    0, // 7
+    &bvs, &adc, 0,    0,     0, &adc,    &ror, 0, &sei, &adc,    0,    0,    0, &adc, &ror,    0, // 7
     0,    &sta, 0,    0,  &sty, &sta,    &stx, 0, &dey,    0, &txa,    0, &sty, &sta, &stx,    0, // 8
-    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0, &tya, &sta,    0,    0,    0, &sta,    0,    0, // 9
+    &bcc, &sta, 0,    0,  &sty, &sta,    &stx, 0, &tya, &sta, &txs,    0,    0, &sta,    0,    0, // 9
     &ldy, &lda, &ldx, 0,  &ldy, &lda,    &ldx, 0, &tay, &lda, &tax,    0, &ldy, &lda, &ldx,    0, // A
-    0,    &lda, 0,    0,  &ldy, &lda,    &ldx, 0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
+    &bcs, &lda, 0,    0,  &ldy, &lda,    &ldx, 0, &clv, &lda, &tsx,    0, &ldy, &lda, &ldx,    0, // B
     &cpy, &cmp, 0,    0,  &cpy, &cmp,    &dec, 0, &iny, &cmp, &dex,    0, &cpy, &cmp, &dec,    0, // C
-    &bne, &cmp, 0,    0,     0, &cmp,    &dec, 0,    0, &cmp,    0,    0,    0, &cmp, &dec,    0, // D
+    &bne, &cmp, 0,    0,     0, &cmp,    &dec, 0, &cld, &cmp,    0,    0,    0, &cmp, &dec,    0, // D
     &cpx, &sbc, 0,    0,  &cpx, &sbc,    &inc, 0, &inx, &sbc, &nop,    0, &cpx, &sbc, &inc,    0, // E
-    0,    &sbc, 0,    0,     0, &sbc,    &inc, 0, &sed, &sbc,    0,    0,    0, &sbc, &inc,    0  // F
+    &beq, &sbc, 0,    0,     0, &sbc,    &inc, 0, &sed, &sbc,    0,    0,    0, &sbc, &inc,    0  // F
   };
 
   enum AddressingMode addressingModes[256] = {
@@ -1078,18 +1154,18 @@ int main(int argc, char **argv)
     Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 1
     Absolute,        IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Accumulator,     0,        Absolute,               Absolute,        Absolute,        0, // 2
     Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 3
-    0,               IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Accumulator,     0,        Absolute,               Absolute,        Absolute,        0, // 4
-    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 5
+    Implicit,        IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Accumulator,     0,        Absolute,               Absolute,        Absolute,        0, // 4
+    Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 5
     Implicit,        IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Accumulator,     0,        Indirect,               Absolute,        Absolute,        0, // 6
-    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 7
+    Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 7
     0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        0,               Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // 8
-    0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
+    Relative,        IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       Implicit,        0,               0,               AbsoluteX,       0,               0, // 9
     Immediate,       IndexedIndirect, Immediate,       0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // A
-    0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
+    Relative,        IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       Implicit,        0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
     Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // C
-    Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // D
+    Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // D
     Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // E
-    0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0  // F
+    Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0  // F
   };
 
   unsigned char buffer[262160];
@@ -1127,144 +1203,6 @@ int main(int argc, char **argv)
     if (instructions[instr] != 0)
     {
       instructions[instr](instr, addressingModes[instr], &state);
-    }
-    // BEQ; Branch if equal; Len 2
-    else if (instr == 0xF0)
-    {
-      signed char relativeDisplacement = buffer[i+1];
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      if (state.zeroFlag == 1) {
-        printf("-> BEQ %02x -> jump by %d\n", relativeDisplacement, relativeDisplacement);
-        state.pc += relativeDisplacement;
-      } else {
-        printf("-> BEQ %02x -> did not jump by %d\n", relativeDisplacement, relativeDisplacement);
-      }
-
-      state.pc += 2;
-    }
-    // BCC; Branch if carry clear; Len 2
-    else if (instr == 0x90)
-    {
-      signed char relativeDisplacement = buffer[i+1];
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      if (state.carryFlag == 0) {
-        printf("-> BCC %02x -> carry flag is zero, so jump by %d\n", relativeDisplacement, relativeDisplacement);
-        state.pc += relativeDisplacement;
-      } else {
-        printf("-> BCC %02x -> carry flag is not zero, so did not jump by %d\n", relativeDisplacement, relativeDisplacement);
-      }
-
-      state.pc += 2;
-    }
-    // BCS; Branch if carry set; Len 2
-    else if (instr == 0xB0)
-    {
-      signed char relativeDisplacement = buffer[i+1];
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      if (state.carryFlag == 1) {
-        printf("-> BCS %02x -> carry flag is set, so jump by %d\n", relativeDisplacement, relativeDisplacement);
-        state.pc += relativeDisplacement;
-      } else {
-        printf("-> BCS %02x -> carry flag is not set, so did not jump by %d\n", relativeDisplacement, relativeDisplacement);
-      }
-
-      state.pc += 2;
-    }
-    // CLD; Clear decimal flag; Len 1; Time 2
-    else if (instr == 0xD8)
-    {
-      printf("%02x\n", instr);
-      printf("-> CLD (clear decimal flag)\n");
-      state.decimalFlag = 0;
-      state.pc++;
-    } 
-    // TXS; Transfer X to Stack Pointer; Len 1; Time 2
-    else if (instr == 0x9A)
-    {
-      state.stackRegister = state.xRegister;
-      printf("%02x\n", instr);
-      printf("-> TXS -- (transfer %x to stack reg)\n", state.xRegister);
-      state.pc++;
-    } 
-    // TSX; Transfer Stack Pointer to X; Len 1; Time 2
-    else if (instr == 0xBA)
-    {
-      state.xRegister = state.stackRegister;
-      state.zeroFlag = (state.xRegister == 0);
-      setNegativeFlag(state.xRegister, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> TSX -- (transfer stack register %x to x reg)\n", state.stackRegister);
-      state.pc++;
-    } 
-    // CPY; Compare y with another value; immediate; Len 2; Time 2
-    else if (instr == 0xC0)
-    {
-      int operand = buffer[i+1];
-      unsigned char result = state.yRegister - operand;
-      state.zeroFlag = (result == 0);
-      state.carryFlag = (state.yRegister >= operand);
-      setNegativeFlag(result, &state.negativeFlag);
-      printf("%02x %02x\n", instr, buffer[i+1]);
-      printf("-> CPY #%02x (compare value %x to y value %x)\n", operand, operand, state.yRegister);
-      state.pc += 2;
-    }
-    // BVC; Branch if overflow clear; Len 2
-    else if (instr == 0x50)
-    {
-      signed char relativeDisplacement = buffer[i+1];
-      printf("%02x %02x\n", instr, buffer[i+1]);
-
-      if (state.overflowFlag == 0) 
-      {
-        // branch
-        printf("-> BVC %02x -- (overflow flag is clear, so jump by %02x)\n", buffer[i+1], relativeDisplacement);
-        state.pc += relativeDisplacement;
-      } 
-      else 
-      {
-        // no branch
-        printf("-> BVC %02x -- (overflow flag is not clear, so do not jump)\n", buffer[i+1]);
-      }
-
-      state.pc += 2;
-    }
-    // BVS; Branch if overflow set; Len 2
-    else if (instr == 0x70)
-    {
-      signed char relativeDisplacement = buffer[i+1];
-      printf("%02x %02x\n", instr, buffer[i+1]);
-
-      if (state.overflowFlag == 1) 
-      {
-        // branch
-        printf("-> BVS %02x -- (overflow flag is set, so jump by %02x)\n", buffer[i+1], relativeDisplacement);
-        state.pc += relativeDisplacement;
-      } 
-      else 
-      {
-        // no branch
-        printf("-> BVS %02x -- (overflow flag is not set, so do not jump)\n", buffer[i+1]);
-      }
-
-      state.pc += 2;
-    }
-    // RTI; Len 1; Time 6
-    else if (instr == 0x40)
-    {
-      unsigned char processorFlags = popFromStack(memory, &state.stackRegister);
-      unsigned char pcLowNibble = popFromStack(memory, &state.stackRegister);
-      unsigned char pcHighNibble = popFromStack(memory, &state.stackRegister);
-
-      state.carryFlag = (processorFlags & 0x01) != 0;
-      state.zeroFlag = (processorFlags & 0x02) != 0;
-      state.interruptDisable = (processorFlags & 0x04) != 0;
-      state.decimalFlag = (processorFlags & 0x08) != 0;
-      state.overflowFlag = (processorFlags & 0x40) != 0;
-      state.negativeFlag = (processorFlags & 0x80) != 0;
-
-      /*state.interruptDisable = 0;*/
-
-      state.pc = (pcHighNibble << 8) | pcLowNibble;
     }
     else {
       printf("unknown instruction: %x\n", instr);
