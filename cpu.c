@@ -1273,12 +1273,13 @@ int main(int argc, char **argv)
     if (state.pc == 0x336d)
     {
       printf("got to the beginning of the decimal mode tests, so I am calling this a success\n");
+      printf("instruction count: %d\n", instructionsExecuted);
       return(0);
     }
 
     instructionsExecuted++;
 
-    if (instructionsExecuted > 1000000) {
+    if (instructionsExecuted > 50000000) {
     //if (instructionsExecuted > 8) {
       printf("Stopping due to instruction limit.\n");
       printf("test number: %02x\n", memory[0x0200]);
