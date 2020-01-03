@@ -990,6 +990,62 @@ void bmi(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void tay(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  state->yRegister = state->acc;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("TAY", addressingMode, "transfer acc %x to y reg", state->acc);
+
+  setZeroFlag(state->yRegister, &state->zeroFlag);
+  setNegativeFlag(state->yRegister, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void tya(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  state->acc = state->yRegister;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("TYA", addressingMode, "transfer Y %x to acc", state->yRegister);
+
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void tax(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  state->xRegister = state->acc;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("TAX", addressingMode, "transfer acc %x to x reg", state->acc);
+
+  setZeroFlag(state->xRegister, &state->zeroFlag);
+  setNegativeFlag(state->xRegister, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
+void txa(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  state->acc = state->xRegister;
+
+  int length = 0;
+  printInstruction(instr, length, state);
+  printInstructionDescription("TXA", addressingMode, "transfer X %x to acc", state->xRegister);
+
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+
+  state->pc += (1 + length);
+}
+
 
 int main(int argc, char **argv) 
 {
@@ -1006,9 +1062,9 @@ int main(int argc, char **argv)
     0,    &eor, 0,    0,     0, &eor,    &lsr, 0, &cli, &eor,    0,    0,    0, &eor, &lsr,    0, // 5
     &rts, &adc, 0,    0,     0, &adc,    &ror, 0, &pla, &adc, &ror,    0, &jmp, &adc, &ror,    0, // 6
     0,    &adc, 0,    0,     0, &adc,    &ror, 0, &sei, &adc,    0,    0,    0, &adc, &ror,    0, // 7
-    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0, &dey,    0,    0,    0, &sty, &sta, &stx,    0, // 8
-    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0,    0, &sta,    0,    0,    0, &sta,    0,    0, // 9
-    &ldy, &lda, &ldx, 0,  &ldy, &lda,    &ldx, 0,    0, &lda,    0,    0, &ldy, &lda, &ldx,    0, // A
+    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0, &dey,    0, &txa,    0, &sty, &sta, &stx,    0, // 8
+    0,    &sta, 0,    0,  &sty, &sta,    &stx, 0, &tya, &sta,    0,    0,    0, &sta,    0,    0, // 9
+    &ldy, &lda, &ldx, 0,  &ldy, &lda,    &ldx, 0, &tay, &lda, &tax,    0, &ldy, &lda, &ldx,    0, // A
     0,    &lda, 0,    0,  &ldy, &lda,    &ldx, 0, &clv, &lda,    0,    0, &ldy, &lda, &ldx,    0, // B
     &cpy, &cmp, 0,    0,  &cpy, &cmp,    &dec, 0, &iny, &cmp, &dex,    0, &cpy, &cmp, &dec,    0, // C
     &bne, &cmp, 0,    0,     0, &cmp,    &dec, 0,    0, &cmp,    0,    0,    0, &cmp, &dec,    0, // D
@@ -1026,9 +1082,9 @@ int main(int argc, char **argv)
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 5
     Implicit,        IndexedIndirect, 0,               0,               0,               ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Accumulator,     0,        Indirect,               Absolute,        Absolute,        0, // 6
     0,               IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // 7
-    0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        0,               0,               0,        Absolute,               Absolute,        Absolute,        0, // 8
-    0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
-    Immediate,       IndexedIndirect, Immediate,       0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               0,               Immediate,       0,               0,        Absolute,               Absolute,        Absolute,        0, // A
+    0,               IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        0,               Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // 8
+    0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,               0,               AbsoluteX,       0,               0, // 9
+    Immediate,       IndexedIndirect, Immediate,       0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // A
     0,               IndirectIndexed, 0,               0,               ZeroPageX,       ZeroPageX,       ZeroPageY,       0,               Implicit,        AbsoluteY,       0,               0,       AbsoluteX,               AbsoluteX,       AbsoluteY,       0, // B
     Immediate,       IndexedIndirect, 0,               0,               ZeroPage,        ZeroPage,        ZeroPage,        0,               Implicit,        Immediate,       Implicit,        0,        Absolute,               Absolute,        Absolute,        0, // C
     Relative,        IndirectIndexed, 0,               0,               0,               ZeroPageX,       ZeroPageX,       0,               0,               AbsoluteY,       0,               0,               0,               AbsoluteX,       AbsoluteX,       0, // D
@@ -1140,16 +1196,6 @@ int main(int argc, char **argv)
       printf("-> TSX -- (transfer stack register %x to x reg)\n", state.stackRegister);
       state.pc++;
     } 
-    // TAY; Transfer Acc to Y; Len 1; Time 2
-    else if (instr == 0xA8)
-    {
-      state.yRegister = state.acc;
-      state.zeroFlag = (state.yRegister == 0);
-      setNegativeFlag(state.yRegister, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> TAY -- (transfer acc %x to y reg)\n", state.acc);
-      state.pc++;
-    } 
     // CPY; Compare y with another value; immediate; Len 2; Time 2
     else if (instr == 0xC0)
     {
@@ -1161,36 +1207,6 @@ int main(int argc, char **argv)
       printf("%02x %02x\n", instr, buffer[i+1]);
       printf("-> CPY #%02x (compare value %x to y value %x)\n", operand, operand, state.yRegister);
       state.pc += 2;
-    }
-    // TYA; Transfer Y to acc; Len 1; Time 2
-    else if (instr == 0x98)
-    {
-      state.acc = state.yRegister;
-      state.zeroFlag = (state.acc == 0);
-      setNegativeFlag(state.acc, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> TYA -- (transfer Y to acc, so acc becomes %x)\n", state.acc);
-      state.pc++;
-    }
-    // TAX; Transfer acc to X; Len 1; Time 2 
-    else if (instr == 0xAA)
-    {
-      state.xRegister = state.acc;
-      state.zeroFlag = (state.xRegister == 0);
-      setNegativeFlag(state.xRegister, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> TAX -- (transfer acc to X, so X becomes %x)\n", state.xRegister);
-      state.pc++;
-    }
-    // TXA; Transfer X to acc; Len 1; Time 2 
-    else if (instr == 0x8A)
-    {
-      state.acc = state.xRegister;
-      state.zeroFlag = (state.acc == 0);
-      setNegativeFlag(state.acc, &state.negativeFlag);
-      printf("%02x\n", instr);
-      printf("-> TXA -- (transfer X to acc, so acc becomes %x)\n", state.acc);
-      state.pc++;
     }
     // BVC; Branch if overflow clear; Len 2
     else if (instr == 0x50)
