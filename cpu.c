@@ -285,6 +285,20 @@ void setAcc(unsigned char value, struct Computer *state)
   setNegativeFlag(state->acc, &state->negativeFlag);
 }
 
+void setX(unsigned char value, struct Computer *state)
+{
+  state->xRegister = value;
+  setZeroFlag(state->xRegister, &state->zeroFlag);
+  setNegativeFlag(state->xRegister, &state->negativeFlag);
+}
+
+void setY(unsigned char value, struct Computer *state)
+{
+  state->yRegister = value;
+  setZeroFlag(state->yRegister, &state->zeroFlag);
+  setNegativeFlag(state->yRegister, &state->negativeFlag);
+}
+
 void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   unsigned char value = 0;
@@ -308,9 +322,7 @@ void ldx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("LDX", addressingMode, "set x to value %02x", value);
 
-  state->xRegister = value;
-  setZeroFlag(state->xRegister, &state->zeroFlag);
-  setNegativeFlag(state->xRegister, &state->negativeFlag);
+  setX(value, state);
   state->pc += (1 + length);
 }
 
@@ -324,9 +336,7 @@ void ldy(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("LDY", addressingMode, "set y to value %02x", value);
 
-  state->yRegister = value;
-  setZeroFlag(state->yRegister, &state->zeroFlag);
-  setNegativeFlag(state->yRegister, &state->negativeFlag);
+  setY(value, state);
   state->pc += (1 + length);
 }
 
@@ -801,9 +811,7 @@ void inx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 {
   int length = 0;
 
-  state->xRegister = state->xRegister + 1;
-  setZeroFlag(state->xRegister, &state->zeroFlag);
-  setNegativeFlag(state->xRegister, &state->negativeFlag);
+  setX(state->xRegister + 1, state);
 
   printInstruction(instr, length, state);
   printInstructionDescription("INX", addressingMode, "increment x register to become %x", state->xRegister);
@@ -815,9 +823,7 @@ void iny(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 {
   int length = 0;
 
-  state->yRegister = state->yRegister + 1;
-  setZeroFlag(state->yRegister, &state->zeroFlag);
-  setNegativeFlag(state->yRegister, &state->negativeFlag);
+  setY(state->yRegister + 1, state);
 
   printInstruction(instr, length, state);
   printInstructionDescription("INY", addressingMode, "increment y register to become %x", state->yRegister);
@@ -829,9 +835,7 @@ void dex(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 {
   int length = 0;
 
-  state->xRegister = state->xRegister - 1;
-  setZeroFlag(state->xRegister, &state->zeroFlag);
-  setNegativeFlag(state->xRegister, &state->negativeFlag);
+  setX(state->xRegister - 1, state);
 
   printInstruction(instr, length, state);
   printInstructionDescription("DEX", addressingMode, "decrement x register to become %x", state->xRegister);
@@ -843,9 +847,7 @@ void dey(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 {
   int length = 0;
 
-  state->yRegister = state->yRegister - 1;
-  setZeroFlag(state->yRegister, &state->zeroFlag);
-  setNegativeFlag(state->yRegister, &state->negativeFlag);
+  setY(state->yRegister - 1, state);
 
   printInstruction(instr, length, state);
   printInstructionDescription("DEY", addressingMode, "decrement y register to become %x", state->yRegister);
@@ -1017,14 +1019,11 @@ void rts(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
 void tay(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  state->yRegister = state->acc;
+  setY(state->acc, state);
 
   int length = 0;
   printInstruction(instr, length, state);
   printInstructionDescription("TAY", addressingMode, "transfer acc %x to y reg", state->acc);
-
-  setZeroFlag(state->yRegister, &state->zeroFlag);
-  setNegativeFlag(state->yRegister, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
@@ -1042,14 +1041,11 @@ void tya(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
 void tax(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  state->xRegister = state->acc;
+  setX(state->acc, state);
 
   int length = 0;
   printInstruction(instr, length, state);
   printInstructionDescription("TAX", addressingMode, "transfer acc %x to x reg", state->acc);
-
-  setZeroFlag(state->xRegister, &state->zeroFlag);
-  setNegativeFlag(state->xRegister, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
@@ -1078,9 +1074,7 @@ void txs(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
 void tsx(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  state->xRegister = state->stackRegister;
-  setZeroFlag(state->xRegister, &state->zeroFlag);
-  setNegativeFlag(state->xRegister, &state->negativeFlag);
+  setX(state->stackRegister, state);
 
   int length = 0;
   printInstruction(instr, length, state);
