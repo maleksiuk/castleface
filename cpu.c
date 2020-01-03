@@ -278,6 +278,13 @@ void rti(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc = (pcHighNibble << 8) | pcLowNibble;
 }
 
+void setAcc(unsigned char value, struct Computer *state)
+{
+  state->acc = value;
+  setZeroFlag(state->acc, &state->zeroFlag);
+  setNegativeFlag(state->acc, &state->negativeFlag);
+}
+
 void lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   unsigned char value = 0;
@@ -287,9 +294,7 @@ void lda(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("LDA", addressingMode, "set acc to value %02x", value);
 
-  state->acc = value;
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
+  setAcc(value, state);
   state->pc += (1 + length);
 }
 
@@ -518,10 +523,8 @@ void asl(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
     unsigned int result = state->acc << 1;
 
-    state->acc = result;
+    setAcc(result, state);
     state->carryFlag = (result > 255);
-    setZeroFlag(result, &state->zeroFlag);
-    setNegativeFlag(result, &state->negativeFlag);
   }
   else
   {
@@ -560,10 +563,8 @@ void rol(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
     unsigned char oldCarryFlag = state->carryFlag;
     state->carryFlag = (state->acc & 0x80) != 0;  // save bit 7 into the carry flag
-    state->acc = result;
-    state->acc = state->acc | oldCarryFlag;  // make bit 0 have the value of the old carry flag
-    setZeroFlag(state->acc, &state->zeroFlag);
-    setNegativeFlag(state->acc, &state->negativeFlag);
+    result = result | oldCarryFlag;  // make bit 0 have the value of the old carry flag
+    setAcc(result, state);
   }
   else
   {
@@ -702,10 +703,7 @@ void and(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("AND", addressingMode, "AND acc value with %02x", value);
 
-  state->acc = state->acc & value;
-
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
+  setAcc(state->acc & value, state);
 
   state->pc += (1 + length);
 }
@@ -718,10 +716,7 @@ void eor(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("EOR", addressingMode, "exclusive or between acc and %02x", value);
 
-  state->acc = state->acc ^ value;
-
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
+  setAcc(state->acc ^ value, state);
 
   state->pc += (1 + length);
 }
@@ -734,10 +729,7 @@ void ora(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("ORA", addressingMode, "logical inclusive OR between acc and %02x", value);
 
-  state->acc = state->acc | value;
-
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
+  setAcc(state->acc | value, state);
 
   state->pc += (1 + length);
 }
@@ -747,9 +739,7 @@ void add(unsigned char value, struct Computer *state)
   unsigned char originalCarryFlag = state->carryFlag;
   unsigned int result = state->acc + value + originalCarryFlag;
   unsigned char overflowFlag = ((state->acc^result)&(value^result)&0x80) != 0;
-  state->acc = result;
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
+  setAcc(result, state);
   state->carryFlag = (result > 255);
 
   // See http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
@@ -909,14 +899,11 @@ void plp(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
 void pla(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  state->acc = popFromStack(state->memory, &state->stackRegister);
+  setAcc(popFromStack(state->memory, &state->stackRegister), state);
 
   int length = 0;
   printInstruction(instr, length, state);
   printInstructionDescription("PLA", addressingMode, "pull from stack and into acc: %02x", state->acc);
-
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
@@ -986,6 +973,12 @@ void bpl(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; branched by %x", branchedByRelativeDisplacement);
 }
 
+void bmi(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
+{
+  signed char branchedByRelativeDisplacement = branchIfTrue(state->negativeFlag == 1, instr, addressingMode, state);
+  printInstructionDescription("BMI", addressingMode, "branch if the negative flag is one; branched by %x", branchedByRelativeDisplacement);
+}
+
 void bne(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 0, instr, addressingMode, state);
@@ -1022,27 +1015,6 @@ void rts(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
-void bmi(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
-{
-  int length = 1;
-  signed char relativeDisplacement = state->memory[state->pc+1];
-  printInstruction(instr, length, state);
-
-  if (state->negativeFlag == 1) 
-  {
-    // branch
-    printInstructionDescription("BMI", addressingMode, "negative flag is one, so jump by %02x", relativeDisplacement);
-    state->pc += relativeDisplacement;
-  } 
-  else 
-  {
-    // no branch
-    printInstructionDescription("BMI", addressingMode, "negative flag is not one, so do not jump");
-  }
-
-  state->pc += (1 + length);
-}
-
 void tay(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   state->yRegister = state->acc;
@@ -1059,14 +1031,11 @@ void tay(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
 void tya(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  state->acc = state->yRegister;
+  setAcc(state->yRegister, state);
 
   int length = 0;
   printInstruction(instr, length, state);
   printInstructionDescription("TYA", addressingMode, "transfer Y %x to acc", state->yRegister);
-
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
@@ -1087,14 +1056,11 @@ void tax(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 
 void txa(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
-  state->acc = state->xRegister;
+  setAcc(state->xRegister, state);
 
   int length = 0;
   printInstruction(instr, length, state);
   printInstructionDescription("TXA", addressingMode, "transfer X %x to acc", state->xRegister);
-
-  setZeroFlag(state->acc, &state->zeroFlag);
-  setNegativeFlag(state->acc, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
