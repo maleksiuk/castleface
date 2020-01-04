@@ -22,16 +22,16 @@
 
 // TODO: consider storing the status flags in a single byte
 
-//#define PRINT_INSTRUCTION 1
-//#define PRINT_INSTRUCTION_DESCRIPTION 1
-//#define PRINT_STATE 1
-//#define PRINT_GAP 1
-//#define PRINT_PC 1
+#define PRINT_INSTRUCTION 1
+#define PRINT_INSTRUCTION_DESCRIPTION 1
+#define PRINT_STATE 1
+#define PRINT_GAP 1
+#define PRINT_PC 1
 
-void printState(unsigned char x, unsigned char y, unsigned char a, unsigned char z, unsigned char n, unsigned char c, unsigned char v, unsigned int pc, unsigned char s)
+void printState(struct Computer *state)
 {
 #ifdef PRINT_STATE
-  printf("State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x", a, x, y, z, n, c, v, pc, s);
+  printf("State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister);
 #endif
 }
 
@@ -927,49 +927,49 @@ signed char branchIfTrue(unsigned char val, unsigned char instr, enum Addressing
 void beq(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {  
   signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 1, instr, addressingMode, state);
-  printInstructionDescription("BEQ", addressingMode, "branch if the zero flag is one; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BEQ", addressingMode, "branch if the zero flag is one; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bcc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {  
   signed char branchedByRelativeDisplacement = branchIfTrue(state->carryFlag == 0, instr, addressingMode, state);
-  printInstructionDescription("BCC", addressingMode, "branch if the carry flag is zero; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BCC", addressingMode, "branch if the carry flag is zero; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bcs(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {  
   signed char branchedByRelativeDisplacement = branchIfTrue(state->carryFlag == 1, instr, addressingMode, state);
-  printInstructionDescription("BCS", addressingMode, "branch if the carry flag is set; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BCS", addressingMode, "branch if the carry flag is set; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bvc(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {  
   signed char branchedByRelativeDisplacement = branchIfTrue(state->overflowFlag == 0, instr, addressingMode, state);
-  printInstructionDescription("BVC", addressingMode, "branch if the overflow flag is zero; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BVC", addressingMode, "branch if the overflow flag is zero; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bvs(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {  
   signed char branchedByRelativeDisplacement = branchIfTrue(state->overflowFlag == 1, instr, addressingMode, state);
-  printInstructionDescription("BVS", addressingMode, "branch if the overflow flag is set; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BVS", addressingMode, "branch if the overflow flag is set; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bpl(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {  
   signed char branchedByRelativeDisplacement = branchIfTrue(state->negativeFlag == 0, instr, addressingMode, state);
-  printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bmi(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   signed char branchedByRelativeDisplacement = branchIfTrue(state->negativeFlag == 1, instr, addressingMode, state);
-  printInstructionDescription("BMI", addressingMode, "branch if the negative flag is one; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BMI", addressingMode, "branch if the negative flag is one; branched by %d", branchedByRelativeDisplacement);
 }
 
 void bne(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 0, instr, addressingMode, state);
-  printInstructionDescription("BNE", addressingMode, "branch if the zero flag is zero; branched by %x", branchedByRelativeDisplacement);
+  printInstructionDescription("BNE", addressingMode, "branch if the zero flag is zero; branched by %d", branchedByRelativeDisplacement);
 }
 
 void jsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
@@ -1111,7 +1111,20 @@ enum AddressingMode addressingModes[256] = {
 
 void executeInstruction(unsigned char instr, struct Computer *state)
 {
+#ifdef PRINT_PC
+  printf("PC: %04x\n", state->pc);
+#endif
+
   instructions[instr](instr, addressingModes[instr], state);
+
+  printState(state);
+#ifdef PRINT_STACK_VALUES
+  printf("\nTop stack values: %02x %02x %02x %02x %02x\n", state->memory[0x01FF], state->memory[0x01FE], state->memory[0x01FD], state->memory[0x01FC], state->memory[0x01FB]);
+#endif
+#ifdef PRINT_GAP
+  printf("\n\n");
+#endif
+
 }
 
 

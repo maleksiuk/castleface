@@ -55,10 +55,6 @@ int main(int argc, char **argv)
 
     instr = buffer[i];
 
-#ifdef PRINT_PC
-    printf("PC: %04x\n", state.pc);
-#endif
-
     /*
     if (instructions[instr] != 0)
     {
@@ -72,14 +68,6 @@ int main(int argc, char **argv)
       return(0);
     }
     */
-
-    printState(state.xRegister, state.yRegister, state.acc, state.zeroFlag, state.negativeFlag, state.carryFlag, state.overflowFlag, state.pc, state.stackRegister);
-#ifdef PRINT_STACK_VALUES
-    printf("\nTop stack values: %02x %02x %02x %02x %02x\n", memory[0x01FF], memory[0x01FE], memory[0x01FD], memory[0x01FC], memory[0x01FB]);
-#endif
-#ifdef PRINT_GAP
-    printf("\n\n");
-#endif
 
     if (initialPc == state.pc) {
       printf("ERROR: did not move to a new instruction\n");
