@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "cpu.h"
 
 // the 6502 has 256 byte pages
 
@@ -103,23 +104,20 @@ int main(int argc, char **argv)
   printf("memory address to start at might be: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
   int memoryAddressToStartAt = (memory[0xFFFD] << 8) | memory[0xFFFC];
 
+  struct Computer state = { memory, 0, 0, 0, 0, 0, 0, 0, 0 };
+
   printf("\n\nexecution:\n");
-  /*sizeOfPrgRomInBytes = 50000; // TODO: tmp*/
-  for (int pc = memoryAddressToStartAt; pc < 0xFFFF;)
+  for (state.pc = memoryAddressToStartAt; state.pc < 0xFFFF;)
   {
-    int i = pc;
+    instr = state.memory[state.pc];
 
-    // printf("byte %i: %x\n", i, buffer[i]);
-    printf("bytes %d to %d: %02x %02x %02x\n", pc, pc+2, memory[i], memory[i+1], memory[i+2]);
-
-    instr = memory[i];
+    executeInstruction(instr, &state);
 
     instructionsExecuted++;
-    if (instructionsExecuted > 10) {
-      return(0);
+    if (instructionsExecuted > 100) {
+      printf("stopping because of instruction limit");
+      break;
     }
-
-    pc++;
   }
 
   free(memory);
