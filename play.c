@@ -6,6 +6,9 @@
 // the 6502 has 256 byte pages
 
 // might be helpful for PPU implementation:
+// - http://nesdev.com/NESDoc.pdf
+// - https://forums.nesdev.com/viewtopic.php?p=157086&sid=67b5e4517ef101b69e0c9d1286eeda16#p157086 
+// - https://forums.nesdev.com/viewtopic.php?p=157167#p157167
 // - http://nesdev.com/NES%20emulator%20development%20guide.txt
 // - https://www.reddit.com/r/EmuDev/comments/7k08b9/not_sure_where_to_start_with_the_nes_ppu/drapgie/
 // - https://www.dustmop.io/blog/2015/12/18/nes-graphics-part-3/
