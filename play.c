@@ -188,6 +188,7 @@ int main(int argc, char **argv)
 
   free(memory);
   free(prgRom);
+  free(chrRom);
 
   return(0);
 }
