@@ -13,11 +13,29 @@
 // - https://www.reddit.com/r/EmuDev/comments/7k08b9/not_sure_where_to_start_with_the_nes_ppu/drapgie/
 // - https://www.dustmop.io/blog/2015/12/18/nes-graphics-part-3/
 
+void printPatternTile(int index, unsigned char *chrRom)
+{
+  int address = 0x1000 + index*16;
+
+  for (int row = 0; row < 8; row++)
+  {
+    for (int col = 0; col < 8; col++)
+    {
+      int bit = 7 - col;
+
+      unsigned char bit1 = (chrRom[address+8+row] >> bit & 0x01) != 0;
+      unsigned char bit0 = (chrRom[address+row] >> bit & 0x01) != 0;
+
+      printf("%d", bit1 << 1 | bit0);
+    }
+    printf("\n");
+  }
+}
+
 int main(int argc, char **argv) 
 {
   printf("hi there\n");
 
-  // TODO: read header into its own space, then prg rom into another space
   unsigned char header[16];
   FILE *file;
 
@@ -71,6 +89,9 @@ int main(int argc, char **argv)
   unsigned char *memory;
   memory = (unsigned char *) malloc(0xFFFF);
 
+  unsigned char *ppuMemory;
+  ppuMemory = (unsigned char *) malloc(0x4000);
+
   unsigned char *prgRom;
   prgRom = (unsigned char *) malloc(sizeOfPrgRomInBytes);
   if (prgRom == 0) 
@@ -93,31 +114,47 @@ int main(int argc, char **argv)
   fread(chrRom, sizeOfChrRomInBytes, 1, file);
   fclose(file);
 
+  // NOTE to self: This isn't working because 0x2000+ isn't within range of chrrom!
+  // chrRom is only 0x2000 bytes long for Donkey Kong.
+  /*
+  printf("name table:\n");
+  int baseNametableAddress = 0x2000; // because of value read from $2000 (bits 0 and 1); but this will change over time I bet
+  for (int row = 0; row < 30; row++)
+  {
+    for (int col = 0; col < 32; col++)
+    {
+      int addressOfNametableEntry = baseNametableAddress + row*32 + col;
+      int indexIntoPatternTable = chrRom[addressOfNametableEntry];
+      printf("%02x ", indexIntoPatternTable);
+      // printf("%04x(%02x) ", addressOfNametableEntry, indexIntoPatternTable);
+    }
+    printf("\n");
+  }
+
+  printPatternTile(0x25, chrRom);
+  printf("\n");
+  printPatternTile(0xa0, chrRom);
+  printf("\n");
+  printPatternTile(0xd8, chrRom);
+  printf("\n");
+  printPatternTile(0x9d, chrRom);
+  printf("\n");
+  */
+  
   
   // https://wiki.nesdev.com/w/index.php/PPU_pattern_tables
   printf("chr rom from $1000 to $1FFF (background pattern table):\n");
   int tileNum = 0;
   for (int i = 0x1000; i < 0x1FFF; i+=16)
   {
+    /*
     printf("tile %d\n", tileNum);
     printf("%02x %02x %02x %02x %02x %02x %02x %02x\n", chrRom[i], chrRom[i+1], chrRom[i+2], chrRom[i+3], chrRom[i+4], chrRom[i+5], chrRom[i+6], chrRom[i+7]);
     printf("%02x %02x %02x %02x %02x %02x %02x %02x", chrRom[i+8], chrRom[i+9], chrRom[i+10], chrRom[i+11], chrRom[i+12], chrRom[i+13], chrRom[i+14], chrRom[i+15]);
     printf("\n\n");
+    */
 
-    // top left colour:
-    // chrRom[i+8].bit7 << 1 | chrRom[i].bit7
-    
-    // next one (row 0, col 1)
-    // chrRom[i+8].bit6 << 1 | chrRom[i].bit6
-
-    // so col controls the bit
-
-    // row 1, col 2
-    // chrRom[i+9].bit5 << 1 | chrRom[i+1].bit5
-
-    // bottom right colour:
-    // chrRom[i+15].bit0 << 1 | chrRom[i+7].bit0
-
+    /*
     for (int row = 0; row < 8; row++)
     {
       for (int col = 0; col < 8; col++)
@@ -132,11 +169,10 @@ int main(int argc, char **argv)
       }
       printf("\n");
     }
-
+    */
 
     tileNum++;
   }
-  
 
   printf("prgRom: %x %x %x %x\n", prgRom[0], prgRom[1], prgRom[2], prgRom[3]);
   printf("chrRom: %x %x %x %x\n", chrRom[0], chrRom[1], chrRom[2], chrRom[3]);
@@ -148,6 +184,8 @@ int main(int argc, char **argv)
   // TODO: this shouldn't be a copy, it should be a mirror. It's ROM so it shouldn't matter though.
   memcpy(&memory[0x8000], prgRom, 0x4000);
   memcpy(&memory[0xC000], prgRom, 0x4000);
+
+  memcpy(&ppuMemory[0], chrRom, 0x2000);
 
   printf("memory[0x8000]: %x %x %x %x\n", memory[0x8000], memory[0x8001], memory[0x8002], memory[0x8003]);
   printf("memory[0xC000]: %x %x %x %x\n", memory[0xC000], memory[0xC001], memory[0xC002], memory[0xC003]);
@@ -180,13 +218,24 @@ int main(int argc, char **argv)
     printf("PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);
 
     instructionsExecuted++;
-    if (instructionsExecuted > 100) {
+
+    if (instructionsExecuted > 30) {
       printf("stopping because of instruction limit");
       break;
     }
+
+
+    /*
+    // pretend vertical blank has started just to see what happens next
+    if (instructionsExecuted == 5)
+    {
+      state.memory[0x2002] = 0x80; 
+    }
+    */
   }
 
   free(memory);
+  free(ppuMemory);
   free(prgRom);
   free(chrRom);
 

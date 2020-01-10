@@ -141,7 +141,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   uint32_t loopCount = 0;
 
-  int backgroundImageStart = 0x1000;
+  int baseNametableAddress = 0x2000; // because of value read from $2000 (bits 0 and 1); but this will change over time I bet
+  // int spriteImageStart = 0x0000;  // because of value read from $2000 (bit 3)
+  int backgroundImageStart = 0x1000;  // because of value read from $2000 (bit 4)
 
   while(running)
   {
@@ -163,7 +165,116 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       DispatchMessageA(&msg);
     }
 
+    OutputDebugString("BEGIN LOOP\n");
 
+    int tileRow = 0;
+    int tileCol = 0;
+    int tileColPixel = 0;
+
+    int nametableByteIndex = 0;
+    for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1)
+    {
+      // if nametableByteIndex = 5, it should be tileRow 0 and tileCol 4
+      // if nametableByteIndex = 35, it should be tileRow 1 and tileCol 3
+      // if nametableByteIndex = 70, it should be tileRow 2 and tileCol 5
+      tileRow = nametableByteIndex / 32;
+      tileCol = nametableByteIndex % 32;
+
+      // int address = baseNametableAddress + nametableByteIndex;
+      int address = baseNametableAddress + tileRow*32 + tileCol;
+
+      // if base address is $2000, tileRow = 3, and tileCol = 2
+      // we want address $2000 + 3*32 + tileCol, maybe?
+
+      char str2[500];
+      sprintf(str2, "index: %d; tileRow %d, tileCol %d, - address in nametable is %x\n", nametableByteIndex, tileRow, tileCol, address);
+      OutputDebugString(str2);
+
+
+
+
+      unsigned char val = chrRom[address];
+
+      // super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
+
+      // I think val is an índex into the background table.
+
+      // 16 because the pattern table comes in 16 byte chunks 
+      int addressOfBackgroundTile = backgroundImageStart + (val * 16);
+
+      // temporarily lock it down to one background image. Try to repeat that on every tile.
+      // int addressOfBackgroundTile = backgroundImageStart + 16;
+
+      // let's say we're on tileRow 3, tileCol 18 
+      // what pixel does it start on?
+      // int tilePixel = tileRow * VIDEO_BUFFER_WIDTH + tileCol * 8;
+
+      int tileRowPixel = tileRow * 8;
+      tileColPixel = tileCol * 8;
+
+      // chrRom[addressOfBackgroundTile]
+      
+      char str[500];
+      sprintf(str, "index: %d - about to render background tile at address %x\n", nametableByteIndex, addressOfBackgroundTile);
+      OutputDebugString(str);
+
+
+      // these row/col are within the 8x8 tile
+      for (int row = 0; row < 8; row++)
+      {
+        for (int col = 0; col < 8; col++)
+        {
+          int bit = 7 - col;
+
+          unsigned char bit1 = (chrRom[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
+          unsigned char bit0 = (chrRom[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
+
+          uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
+          videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
+
+          // videoBuffer is 256 x 240 
+
+          uint32_t *pixel = (uint32_t *)(videoBufferRow);
+          pixel += (tileColPixel + col);
+          char str[500];
+          sprintf(str, "pixel - %d %d\n", (tileRowPixel + row), tileColPixel + col);
+          OutputDebugString(str);
+
+          int val = bit1 << 1 | bit0;
+          uint8_t red = 0;
+          uint8_t green = 0;
+          uint8_t blue = 0;
+          if (val == 0)
+          {
+          }
+          else if (val == 1)
+          {
+            blue = 0xFF;
+          }
+          else if (val == 2)
+          {
+            green = 0xFF;
+          }
+          else if (val == 3)
+          {
+            red = 0xFF;
+          }
+
+          *pixel = ((red << 16) | (green << 8) | blue);
+        }
+      }
+
+      
+      /*
+      char str[500];
+      sprintf(str, "nametableByteIndex: %d; tileRow %d, tileCol %d -- %x: %02x; address of background tile: %x\n", nametableByteIndex, tileRow, tileCol, address, val, addressOfBackgroundTile);
+      OutputDebugString(str);
+      */
+      
+    }
+
+
+    /*
     // https://wiki.nesdev.com/w/index.php/PPU_pattern_tables
     for (int row = 0; row < 8; row++)
     {
@@ -203,6 +314,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         *pixel = ((red << 16) | (green << 8) | blue);
       }
     }
+    */
 
 
 
@@ -223,10 +335,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
     */
 
+    /*
     if (loopCount % 600 == 0)
     {
       backgroundImageStart += 16;
+      if (backgroundImageStart >= 0x1FFF)
+      {
+        backgroundImageStart = 0x1000;
+      }
     }
+    */
 
     HDC deviceContext = GetDC(windowHandle);
 
