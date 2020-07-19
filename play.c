@@ -3,6 +3,23 @@
 #include <string.h>
 #include "cpu.h"
 
+/*
+ *
+ 
+ What if I start by rendering 3x pixels where x is the number of cycles an instruction
+ took for the CPU to do? That might be ok for Donkey Kong and will at least
+ get me started.
+
+ So my plan could be:
+  - CPU to return number of cycles.
+  - Mapping PPU registers so the CPU's writes to them actually do stuff.
+  - Interrupt stuff (probably).
+  - Write a PPU function to render the next N pixels. 
+
+ */
+
+
+
 // the 6502 has 256 byte pages
 
 // might be helpful for PPU implementation:
@@ -12,6 +29,7 @@
 // - http://nesdev.com/NES%20emulator%20development%20guide.txt
 // - https://www.reddit.com/r/EmuDev/comments/7k08b9/not_sure_where_to_start_with_the_nes_ppu/drapgie/
 // - https://www.dustmop.io/blog/2015/12/18/nes-graphics-part-3/
+// - http://www.michaelburge.us/2019/03/18/nes-design.html#ppu
 
 void printPatternTile(int index, unsigned char *chrRom)
 {
@@ -223,7 +241,6 @@ int main(int argc, char **argv)
       printf("stopping because of instruction limit");
       break;
     }
-
 
     /*
     // pretend vertical blank has started just to see what happens next

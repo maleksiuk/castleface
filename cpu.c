@@ -22,11 +22,11 @@
 
 // TODO: consider storing the status flags in a single byte
 
-#define PRINT_INSTRUCTION 1
-#define PRINT_INSTRUCTION_DESCRIPTION 1
-#define PRINT_STATE 1
-#define PRINT_GAP 1
-#define PRINT_PC 1
+/*#define PRINT_INSTRUCTION 1*/
+/*#define PRINT_INSTRUCTION_DESCRIPTION 1*/
+/*#define PRINT_STATE 1*/
+/*#define PRINT_GAP 1*/
+/*#define PRINT_PC 1*/
 
 void printState(struct Computer *state)
 {
