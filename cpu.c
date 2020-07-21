@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include "cpu.h"
+#include <windows.h>
 
 // the 6502 has 256 byte pages
 
@@ -23,15 +24,22 @@
 // TODO: consider storing the status flags in a single byte
 
 /*#define PRINT_INSTRUCTION 1*/
-/*#define PRINT_INSTRUCTION_DESCRIPTION 1*/
+#define PRINT_INSTRUCTION_DESCRIPTION 1
+#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1
 /*#define PRINT_STATE 1*/
-/*#define PRINT_GAP 1*/
+#define PRINT_GAP 1
 /*#define PRINT_PC 1*/
+
+/*void OutputDebugString(char *str) {*/
+/*}*/
 
 void printState(struct Computer *state)
 {
 #ifdef PRINT_STATE
-  printf("State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister);
+  char str[500];
+  sprintf(str, "State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x\n", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister);
+  printf(str);
+  OutputDebugString(str);
 #endif
 }
 
@@ -156,12 +164,19 @@ int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, st
 void printInstruction(unsigned char instr, int length, struct Computer *state)
 {
 #ifdef PRINT_INSTRUCTION
-  printf("%02x", instr);
+  char str[500];
+  sprintf(str, "%02x", instr);
+  printf(str);
+  OutputDebugString(str);
+
   for (int i = 1; i <= length; i++)
   {
-    printf(" %02x", state->memory[state->pc + i]);
+    sprintf(str, " %02x", state->memory[state->pc + i]);
+    printf(str);
+    OutputDebugString(str);
   }
   printf("\n");
+  OutputDebugString("\n");
 #endif
 }
 
@@ -203,6 +218,12 @@ char *addressingModeString(enum AddressingMode addressingMode)
 void printInstructionDescription(char *name, enum AddressingMode addressingMode, char *desc, ...)
 {
 #ifdef PRINT_INSTRUCTION_DESCRIPTION
+#ifdef PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES
+  if (strcmp(name, "STA") != 0 && strcmp(name, "STX") != 0 && strcmp(name, "STY") != 0)
+  {
+    return;
+  }
+#endif
   va_list arguments;
   va_start(arguments, desc);
 
@@ -210,7 +231,10 @@ void printInstructionDescription(char *name, enum AddressingMode addressingMode,
   vsprintf(str, desc, arguments);
   va_end(arguments);
 
-  printf("-> %s; %s; %s\n", name, addressingModeString(addressingMode), str);
+  char outputstr[500];
+  sprintf(outputstr, "-> %s; %s; %s\n", name, addressingModeString(addressingMode), str);
+  printf(outputstr);
+  OutputDebugString(outputstr);
 #endif
 }
 
@@ -552,7 +576,7 @@ void rol(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   {
     length = 0;
     printInstruction(instr, length, state);
-    printInstructionDescription("ROL", addressingMode, "rorate left of accumulator", value);
+    printInstructionDescription("ROL", addressingMode, "rotate left of accumulator", value);
 
     unsigned char result = state->acc << 1;
 
@@ -568,7 +592,7 @@ void rol(unsigned char instr, enum AddressingMode addressingMode, struct Compute
     unsigned char value = state->memory[memoryAddress];
 
     printInstruction(instr, length, state);
-    printInstructionDescription("ROL", addressingMode, "rorate left of value %02x", value);
+    printInstructionDescription("ROL", addressingMode, "rotate left of value %02x", value);
 
     unsigned char oldCarryFlag = state->carryFlag;
     unsigned char result = value << 1;
@@ -602,7 +626,7 @@ void ror(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   }
 
   printInstruction(instr, length, state);
-  printInstructionDescription("ROR", addressingMode, "rorate right of value %02x", *value);
+  printInstructionDescription("ROR", addressingMode, "rotate right of value %02x", *value);
 
   unsigned char oldBitZero = (*value & 0x01) != 0; 
   unsigned char result = *value >> 1;
