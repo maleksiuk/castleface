@@ -2,7 +2,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include "cpu.h"
-#include <windows.h>
+/*#include <windows.h>*/
 
 // the 6502 has 256 byte pages
 
@@ -21,23 +21,36 @@
  *
  */
 
+/* 
+ * Notes about status flags:
+ *
+ * The break flag isn't a stored entity. We just set it one way or the other when pushing the status byte to the stack.
+ * Reference: http://nesdev.com/the%20%27B%27%20flag%20&%20BRK%20instruction.txt
+ *
+ * Bit 5 has no name, and is always set to 1.
+ *
+ */
+
+
 // TODO: consider storing the status flags in a single byte
 
-/*#define PRINT_INSTRUCTION 1*/
+#define PRINT_INSTRUCTION 1
 #define PRINT_INSTRUCTION_DESCRIPTION 1
-#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1
-/*#define PRINT_STATE 1*/
+/*#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1*/
+#define PRINT_STATE 1
 #define PRINT_GAP 1
-/*#define PRINT_PC 1*/
+#define PRINT_PC 1
 
-/*void OutputDebugString(char *str) {*/
-/*}*/
+void OutputDebugString(char *str) {
+}
 
 void printState(struct Computer *state)
 {
 #ifdef PRINT_STATE
+  unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (0 << 4)
+    | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
   char str[500];
-  sprintf(str, "State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x\n", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister);
+  sprintf(str, "State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x Flags=%02x\n", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister, processorStatus);
   printf(str);
   OutputDebugString(str);
 #endif
@@ -1092,9 +1105,27 @@ void tsx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
-  // instruction table
+void fireIrqInterrupt(struct Computer *state) {
+  printf("************ FIRING IT\n\n");
+  // TODO: do we honour the interrupt disable flag for this interrupt?
+  state->irqFired = true;
+
+  unsigned int pcToPushToStack = state->pc + 1;
+  pushToStack(pcToPushToStack >> 8, state->memory, &state->stackRegister);
+  pushToStack(pcToPushToStack, state->memory, &state->stackRegister);
+
+  // Note that the break flag is not set to 1 here, unlike when using BRK. https://www.pagetable.com/?p=410
+  unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (0 << 4)
+    | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
+
+  pushToStack(processorStatus, state->memory, &state->stackRegister);
+
+  state->interruptDisable = 1;
+  state->pc = (state->memory[0xffff] << 8) | state->memory[0xfffe];
+}
+
+// instruction table
 void (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
-  //  0     1     2     3      4     5     6     7     8     9     A     B     C     D     E     F 
   &brk, &ora, 0,    0,     0, &ora,    &asl, 0, &php, &ora, &asl,    0,    0, &ora, &asl,    0, // 0
   &bpl, &ora, 0,    0,     0, &ora,    &asl, 0, &clc, &ora,    0,    0,    0, &ora, &asl,    0, // 1
   &jsr, &and, 0,    0,  &bit, &and,    &rol, 0, &plp, &and, &rol,    0, &bit, &and, &rol,    0, // 2
@@ -1138,6 +1169,12 @@ void executeInstruction(unsigned char instr, struct Computer *state)
 #ifdef PRINT_PC
   printf("PC: %04x\n", state->pc);
 #endif
+
+  if (state->irqFired) 
+  {
+    printf("************* irq fired!\n");
+    state->irqFired = false;
+  }
 
   instructions[instr](instr, addressingModes[instr], state);
 

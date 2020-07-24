@@ -20,9 +20,6 @@
  *
  */
 
-// TODO: consider storing the status flags in a single byte
-
-
 int main(int argc, char **argv) 
 {
   printf("hi there\n");

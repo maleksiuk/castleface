@@ -40,6 +40,8 @@
 // - https://www.dustmop.io/blog/2015/12/18/nes-graphics-part-3/
 // - http://www.michaelburge.us/2019/03/18/nes-design.html#ppu
 
+// - got the kingswood assembler from http://web.archive.org/web/20190301123637/http://www.kingswood-consulting.co.uk/assemblers/
+//   (but then learned that it also comes with the Klaus functional tests)
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 

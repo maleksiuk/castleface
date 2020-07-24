@@ -1,6 +1,8 @@
 #ifndef FILE_CPU_H_SEEN
 #define FILE_CPU_H_SEEN
 
+#include <stdbool.h>
+
 struct Computer 
 { 
   unsigned char *memory;
@@ -17,8 +19,11 @@ struct Computer
   unsigned char interruptDisable;
   unsigned char zeroFlag;
   unsigned char carryFlag;
+
+  bool irqFired;
 };
 
 void executeInstruction(unsigned char instr, struct Computer *state);
+void fireIrqInterrupt(struct Computer *state);
 
 #endif /* !FILE_CPU_H_SEEN */
