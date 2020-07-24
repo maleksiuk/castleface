@@ -890,6 +890,7 @@ void nop(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 void php(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   // NV1BDIZC
+  // the break flag is being set to 1; this is correct
   unsigned char value = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (1 << 4)
     | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
 
@@ -1110,7 +1111,7 @@ void fireIrqInterrupt(struct Computer *state) {
   // TODO: do we honour the interrupt disable flag for this interrupt?
   state->irqFired = true;
 
-  unsigned int pcToPushToStack = state->pc + 1;
+  unsigned int pcToPushToStack = state->pc;
   pushToStack(pcToPushToStack >> 8, state->memory, &state->stackRegister);
   pushToStack(pcToPushToStack, state->memory, &state->stackRegister);
 
