@@ -9,8 +9,8 @@
 
 /*
  * Possible next steps:
- *  - make interrupts work. Look at the Klaus interrupt test.
- *  - break out a PPU struct and put the chrRom in its memory.
+ *  [x]- make interrupts work. Look at the Klaus interrupt test.
+ *  [x]- break out a PPU struct and put the chrRom in its memory.
  *  - make gates 2006/2007 on the PPU actually fill PPU memory.
  */
 
@@ -53,8 +53,25 @@ int running = 1;
 void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
 
+// https://wiki.nesdev.com/w/index.php/PPU_memory_map
+struct PPU
+{ 
+  unsigned char *memory;
+};
 
-void renderToVideoBuffer(char *chrRom) 
+void print(const char *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  char str[200];
+  vsprintf(str, format, arguments);
+  va_end(arguments);
+
+  printf(str);
+  OutputDebugString(str);
+}
+
+void renderToVideoBuffer(char *ppuMemory) 
 {
   int baseNametableAddress = 0x2000; // because of value read from $2000 (bits 0 and 1); but this will change over time I bet
   // int spriteImageStart = 0x0000;  // because of value read from $2000 (bit 3)
@@ -65,8 +82,7 @@ void renderToVideoBuffer(char *chrRom)
   int tileColPixel = 0;
 
   int nametableByteIndex = 0;
-  for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1)
-  {
+  for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1) {
     // if nametableByteIndex = 5, it should be tileRow 0 and tileCol 4
     // if nametableByteIndex = 35, it should be tileRow 1 and tileCol 3
     // if nametableByteIndex = 70, it should be tileRow 2 and tileCol 5
@@ -75,18 +91,12 @@ void renderToVideoBuffer(char *chrRom)
 
     /*
      *
-     * Future MIKE: I think we're making a mistake here... we're getting val from the chrRom.
-     * But really we need to load chrRom into ppumemory $0000-$1FFF, and then $2000
-     * will be the base nametable address for Donkey Kong, but will be empty I guess
-     * until the program fills it.
-     *
      * https://wiki.nesdev.com/w/index.php/PPU_memory_map
      *
      * This seems helpful: http://forums.nesdev.com/viewtopic.php?f=3&t=18656
      *
      */
 
-    // int address = baseNametableAddress + nametableByteIndex;
     int address = baseNametableAddress + tileRow*32 + tileCol;
 
     // if base address is $2000, tileRow = 3, and tileCol = 2
@@ -96,7 +106,7 @@ void renderToVideoBuffer(char *chrRom)
     /*sprintf(str2, "index: %d; tileRow %d, tileCol %d, - address in nametable is %x\n", nametableByteIndex, tileRow, tileCol, address);*/
     /*OutputDebugString(str2);*/
 
-    unsigned char val = chrRom[address];
+    unsigned char val = ppuMemory[address];
 
     // super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
 
@@ -122,14 +132,12 @@ void renderToVideoBuffer(char *chrRom)
     /*OutputDebugString(str);*/
 
     // these row/col are within the 8x8 tile
-    for (int row = 0; row < 8; row++)
-    {
-      for (int col = 0; col < 8; col++)
-      {
+    for (int row = 0; row < 8; row++) {
+      for (int col = 0; col < 8; col++) {
         int bit = 7 - col;
 
-        unsigned char bit1 = (chrRom[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
-        unsigned char bit0 = (chrRom[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
+        unsigned char bit1 = (ppuMemory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
+        unsigned char bit0 = (ppuMemory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
 
         uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
         videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
@@ -188,10 +196,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   fread(header, sizeof(header), 1, file);
 
   int sizeOfPrgRomInBytes = 16 * 1024 * header[4];
-  printf("Size of PRG ROM in 16kb units: %d (and in bytes: %d)\n", header[4], sizeOfPrgRomInBytes);
+  print("Size of PRG ROM in 16kb units: %d (and in bytes: %d)\n", header[4], sizeOfPrgRomInBytes);
 
   int sizeOfChrRomInBytes = 8 * 1024 * header[5];
-  printf("Size of CHR ROM in 8 KB units (Value 0 means the board uses CHR RAM): %d (and in bytes: %d)\n", header[5], sizeOfChrRomInBytes);
+  print("Size of CHR ROM in 8 KB units (Value 0 means the board uses CHR RAM): %d (and in bytes: %d)\n", header[5], sizeOfChrRomInBytes);
 
   if ((header[7]&0x0C)==0x08) {
     printf("NES 2.0 format\n");
@@ -230,6 +238,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   unsigned char *memory;
   memory = (unsigned char *) malloc(0xFFFF);
 
+  unsigned char *ppuMemory;
+  ppuMemory = (unsigned char *) calloc(1, 0x3FFF);
+
   unsigned char *prgRom;
   prgRom = (unsigned char *) malloc(sizeOfPrgRomInBytes);
   if (prgRom == 0) 
@@ -238,6 +249,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     // TODO: free the other memory I've allocated?
     return(0);
   }
+
 
   unsigned char *chrRom;
   chrRom = (unsigned char *) malloc(sizeOfChrRomInBytes);
@@ -256,6 +268,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   // TODO: this shouldn't be a copy, it should be a mirror. It's ROM so it shouldn't matter though.
   memcpy(&memory[0x8000], prgRom, 0x4000);
   memcpy(&memory[0xC000], prgRom, 0x4000);
+
+  // TODO: might as well just read chrRom right into ppuMemory, right?
+  memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
+  struct PPU ppu = { ppuMemory }; 
 
   // Prep video buffer and bitmap info
   videoBuffer = malloc(VIDEO_BUFFER_WIDTH * VIDEO_BUFFER_HEIGHT * 4);
@@ -313,7 +329,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   int instructionsExecuted = 0;
   unsigned char instr = 0;
 
-  int instructionLimit = 18000;
+  /*int instructionLimit = 18000;*/
+  int instructionLimit = 300;
 
   // what I'm seeing Donkey Kong do:
   //
@@ -349,7 +366,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     // just temporarily slow its roll
     if (loopCount % 50 == 0) {
-      renderToVideoBuffer(chrRom);
+      renderToVideoBuffer(ppu.memory);
     }
 
   // Donkey Kong is setting 2000 (first ppu reg) to 00010000, indicating that the background table address is $1000 (in the CHR ROM I believe)
@@ -404,6 +421,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   free(videoBuffer);
   free(memory);
+  free(ppuMemory);
   free(prgRom);
   free(chrRom);
   return 0;
