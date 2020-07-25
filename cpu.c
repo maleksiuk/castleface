@@ -56,6 +56,14 @@ void printState(struct Computer *state)
 #endif
 }
 
+void writeMemory(unsigned int memoryAddress, unsigned char value, struct Computer *state)
+{
+  state->memory[memoryAddress] = value;
+  if (state->ppuClosure != 0) {
+    state->ppuClosure->onMemoryWrite(memoryAddress, value, state);
+  }
+}
+
 void setNegativeFlag(unsigned char val, unsigned char *negativeFlag)
 {
   *negativeFlag = ((val & 0x80) != 0);
@@ -370,7 +378,7 @@ void sta(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("STA", addressingMode, "set memory address %x to acc value %02x", memoryAddress, state->acc);
 
-  state->memory[memoryAddress] = state->acc;
+  writeMemory(memoryAddress, state->acc, state);
   state->pc += (1 + length);
 }
 
@@ -382,7 +390,7 @@ void stx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("STX", addressingMode, "set memory address %x to x value %02x", memoryAddress, state->xRegister);
 
-  state->memory[memoryAddress] = state->xRegister;
+  writeMemory(memoryAddress, state->xRegister, state);
   state->pc += (1 + length);
 }
 
@@ -394,7 +402,7 @@ void sty(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   printInstruction(instr, length, state);
   printInstructionDescription("STY", addressingMode, "set memory address %x to y value %02x", memoryAddress, state->yRegister);
 
-  state->memory[memoryAddress] = state->yRegister;
+  writeMemory(memoryAddress, state->yRegister, state);
   state->pc += (1 + length);
 }
 
@@ -570,7 +578,7 @@ void asl(unsigned char instr, enum AddressingMode addressingMode, struct Compute
     unsigned int bigResult = value << 1;
     unsigned char smallResult = bigResult;
 
-    state->memory[memoryAddress] = smallResult;
+    writeMemory(memoryAddress, smallResult, state);
     state->carryFlag = (bigResult > 255);
     setZeroFlag(smallResult, &state->zeroFlag);
     setNegativeFlag(smallResult, &state->negativeFlag);
@@ -612,7 +620,7 @@ void rol(unsigned char instr, enum AddressingMode addressingMode, struct Compute
     result = result | oldCarryFlag;  // make bit 0 have the value of the old carry flag
 
     state->carryFlag = (value & 0x80) != 0;  // save bit 7 into the carry flag
-    state->memory[memoryAddress] = result;
+    writeMemory(memoryAddress, result, state);
     setZeroFlag(result, &state->zeroFlag);
     setNegativeFlag(result, &state->negativeFlag);
   }

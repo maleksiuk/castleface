@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cpu.h"
+#include "ppu.h"
 
 // helpful: https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
 
@@ -53,11 +54,6 @@ int running = 1;
 void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
 
-// https://wiki.nesdev.com/w/index.php/PPU_memory_map
-struct PPU
-{ 
-  unsigned char *memory;
-};
 
 void print(const char *format, ...) {
   va_list arguments;
@@ -181,6 +177,46 @@ void renderToVideoBuffer(char *ppuMemory)
        */
   }
 }
+
+// upper byte gets written first, then lower byte
+void setPPUAddr(unsigned char value, struct PPU *ppu) 
+{
+  if (ppu->ppuAddrSetLow) {
+    // write lower byte
+    ppu->ppuAddrGateLow = value;
+    ppu->ppuAddrSetLow = false;  // so that next time we set the upper byte
+
+    ppu->ppuAddr = (ppu->ppuAddrGateHigh << 8) | ppu->ppuAddrGateLow;
+  } else {
+    // write upper byte
+    ppu->ppuAddrGateHigh = value;
+    ppu->ppuAddrSetLow = true;  // so that next time we set the lower byte
+  }
+}
+
+void setPPUData(unsigned char value, struct PPU *ppu, int inc) 
+{
+  ppu->memory[ppu->ppuAddr] = value;
+  ppu->ppuAddr = ppu->ppuAddr + inc;
+}
+
+// TODO: I'm not so sure I want this to be the final mechanism to handle PPU/CPU communication.
+void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Computer *state) 
+{
+  if (memoryAddress == 0x2006) {
+    struct PPU *ppu = state->ppuClosure->ppu;
+    setPPUAddr(value, ppu);
+    print("\n\n\n>>>>>>>>>>>>>>>>>> CPU is writing this to 0x2006: %02x!\n\n\n", value);
+  } else if (memoryAddress == 0x2007) {
+    struct PPU *ppu = state->ppuClosure->ppu;
+    int inc = 1;
+    if (state->memory[0x2000] >> 3 & 0x01 == 1) {
+      inc = 32;
+    }
+    setPPUData(value, ppu, inc);
+  }
+}
+
 
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
@@ -323,14 +359,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   printf("memory address to start is: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
   int memoryAddressToStartAt = (memory[0xFFFD] << 8) | memory[0xFFFC];
 
-  struct Computer state = { memory, 0, 0, 0, 0, 0, 0, 0, 0 };
+  struct PPUClosure ppuClosure = { .ppu = &ppu, .onMemoryWrite = &onCPUMemoryWrite };
+
+  struct Computer state = { .memory = memory, .ppuClosure = &ppuClosure };
   state.pc = memoryAddressToStartAt;
 
   int instructionsExecuted = 0;
   unsigned char instr = 0;
 
-  /*int instructionLimit = 18000;*/
-  int instructionLimit = 300;
+  int instructionLimit = 18000;
+  /*int instructionLimit = 300;*/
 
   // what I'm seeing Donkey Kong do:
   //

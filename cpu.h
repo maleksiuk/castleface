@@ -2,6 +2,7 @@
 #define FILE_CPU_H_SEEN
 
 #include <stdbool.h>
+#include "ppu.h"
 
 struct Computer 
 { 
@@ -22,6 +23,8 @@ struct Computer
 
   bool irqPending;
   bool nmiPending;
+
+  struct PPUClosure *ppuClosure;
 };
 
 void executeInstruction(unsigned char instr, struct Computer *state);
