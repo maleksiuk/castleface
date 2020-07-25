@@ -20,9 +20,7 @@ struct Computer
   unsigned char zeroFlag;
   unsigned char carryFlag;
 
-  bool irqFired;
   bool irqPending;
-  bool nmiFired;
   bool nmiPending;
 };
 

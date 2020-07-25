@@ -1119,7 +1119,6 @@ void fireIrqInterrupt(struct Computer *state) {
     return;
   }
   printf("************ FIRING IT (IRQ)\n\n");
-  state->irqFired = true;
   state->irqPending = false;
 
   unsigned int pcToPushToStack = state->pc;
@@ -1138,7 +1137,6 @@ void fireIrqInterrupt(struct Computer *state) {
 
 void fireNmiInterrupt(struct Computer *state) {
   printf("************ FIRING IT (NMI)\n\n");
-  state->nmiFired = true;
   state->nmiPending = false;
 
   unsigned int pcToPushToStack = state->pc;
@@ -1201,14 +1199,6 @@ void executeInstruction(unsigned char instr, struct Computer *state)
   printf("PC: %04x\n", state->pc);
 #endif
 
-  if (state->irqFired) {
-    state->irqFired = false;
-  }
-
-  if (state->nmiFired) {
-    state->nmiFired = false;
-  }
-
   instructions[instr](instr, addressingModes[instr], state);
 
   if (state->nmiPending) {
@@ -1224,7 +1214,6 @@ void executeInstruction(unsigned char instr, struct Computer *state)
 #ifdef PRINT_GAP
   printf("\n\n");
 #endif
-
 }
 
 
