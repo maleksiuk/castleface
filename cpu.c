@@ -1106,10 +1106,21 @@ void tsx(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   state->pc += (1 + length);
 }
 
+void triggerIrqInterrupt(struct Computer *state) {
+  state->irqPending = true;
+}
+
+void triggerNmiInterrupt(struct Computer *state) {
+  state->nmiPending = true;
+}
+
 void fireIrqInterrupt(struct Computer *state) {
-  printf("************ FIRING IT\n\n");
-  // TODO: do we honour the interrupt disable flag for this interrupt?
+  if (state->interruptDisable == 1) {
+    return;
+  }
+  printf("************ FIRING IT (IRQ)\n\n");
   state->irqFired = true;
+  state->irqPending = false;
 
   unsigned int pcToPushToStack = state->pc;
   pushToStack(pcToPushToStack >> 8, state->memory, &state->stackRegister);
@@ -1123,6 +1134,25 @@ void fireIrqInterrupt(struct Computer *state) {
 
   state->interruptDisable = 1;
   state->pc = (state->memory[0xffff] << 8) | state->memory[0xfffe];
+}
+
+void fireNmiInterrupt(struct Computer *state) {
+  printf("************ FIRING IT (NMI)\n\n");
+  state->nmiFired = true;
+  state->nmiPending = false;
+
+  unsigned int pcToPushToStack = state->pc;
+  pushToStack(pcToPushToStack >> 8, state->memory, &state->stackRegister);
+  pushToStack(pcToPushToStack, state->memory, &state->stackRegister);
+
+  // Note that the break flag is not set to 1 here, unlike when using BRK. https://www.pagetable.com/?p=410
+  unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (0 << 4)
+    | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
+
+  pushToStack(processorStatus, state->memory, &state->stackRegister);
+
+  state->interruptDisable = 1;
+  state->pc = (state->memory[0xfffb] << 8) | state->memory[0xfffa];
 }
 
 // instruction table
@@ -1171,13 +1201,21 @@ void executeInstruction(unsigned char instr, struct Computer *state)
   printf("PC: %04x\n", state->pc);
 #endif
 
-  if (state->irqFired) 
-  {
-    printf("************* irq fired!\n");
+  if (state->irqFired) {
     state->irqFired = false;
   }
 
+  if (state->nmiFired) {
+    state->nmiFired = false;
+  }
+
   instructions[instr](instr, addressingModes[instr], state);
+
+  if (state->nmiPending) {
+    fireNmiInterrupt(state);
+  } else if (state->irqPending) {
+    fireIrqInterrupt(state);
+  }
 
   printState(state);
 #ifdef PRINT_STACK_VALUES

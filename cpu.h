@@ -21,9 +21,15 @@ struct Computer
   unsigned char carryFlag;
 
   bool irqFired;
+  bool irqPending;
+  bool nmiFired;
+  bool nmiPending;
 };
 
 void executeInstruction(unsigned char instr, struct Computer *state);
+void triggerIrqInterrupt(struct Computer *state);
 void fireIrqInterrupt(struct Computer *state);
+void triggerNmiInterrupt(struct Computer *state);
+void fireNmiInterrupt(struct Computer *state);
 
 #endif /* !FILE_CPU_H_SEEN */

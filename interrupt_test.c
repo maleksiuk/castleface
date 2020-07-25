@@ -20,20 +20,15 @@ int main(int argc, char **argv)
   FILE *file;
 
   file = fopen("6502_interrupt_test.bin", "rb");
-  //file = fopen("test.out", "rb");
-
   fread(buffer, sizeof(buffer), 1, file);
+  fclose(file);
 
   unsigned char *memory = buffer;
-  /*unsigned char *memory;*/
-  /*memory = (unsigned char *) malloc(0xFFFF);*/
-
   unsigned char instr = 0;
 
   struct Computer state = { memory, 0, 0, 0, 0, 0, 0, 0, 0 };
 
   int instructionsExecuted = 0;
-
   int memoryAddressToStartAt = 0x0400;  // just for the test file
 
   printf("\n\nbegin execution:\n\n");
@@ -44,8 +39,14 @@ int main(int argc, char **argv)
     instr = buffer[i];
 
     unsigned char oldIrqBit = state.memory[0xbffc] & 0x01;
+    unsigned char oldNmiBit = state.memory[0xbffc] & 0x02;
 
     executeInstruction(instr, &state);
+
+    if (state.pc == 0x06f5) {
+      printf("SUCCESS!\n");
+      return(0);
+    }
 
     if (initialPc == state.pc) {
       printf("ERROR: did not move to a new instruction\n");
@@ -54,21 +55,22 @@ int main(int argc, char **argv)
     }
 
     unsigned char newIrqBit = state.memory[0xbffc] & 0x01;
+    unsigned char newNmiBit = state.memory[0xbffc] & 0x02;
+    if (oldNmiBit == 0 && newNmiBit == 0x02) {
+      triggerNmiInterrupt(&state);
+    } 
     if (oldIrqBit == 0 && newIrqBit == 1) {
-      fireIrqInterrupt(&state);
+      triggerIrqInterrupt(&state);
     }
 
     instructionsExecuted++;
 
     if (instructionsExecuted > 50000000) {
-    //if (instructionsExecuted > 8) {
       printf("Stopping due to instruction limit.\n");
       printf("test number: %02x\n", memory[0x0200]);
       return(0);
     }
   }
-
-  fclose(file);
 
   return(0);
 }

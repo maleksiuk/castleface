@@ -28,20 +28,13 @@ int main(int argc, char **argv)
   FILE *file;
 
   file = fopen("6502_functional_test.bin", "rb");
-  //file = fopen("test.out", "rb");
-
   fread(buffer, sizeof(buffer), 1, file);
+  fclose(file);
 
   unsigned char *memory = buffer;
-  /*unsigned char *memory;*/
-  /*memory = (unsigned char *) malloc(0xFFFF);*/
-
   unsigned char instr = 0;
-
   struct Computer state = { memory, 0, 0, 0, 0, 0, 0, 0, 0 };
-
   int instructionsExecuted = 0;
-
   int memoryAddressToStartAt = 0x0400;  // just for the test file
 
   printf("\n\nbegin execution:\n\n");
@@ -51,20 +44,7 @@ int main(int argc, char **argv)
     int initialPc = state.pc;
 
     instr = buffer[i];
-
-    /*
-    if (instructions[instr] != 0)
-    {
-    */
-      executeInstruction(instr, &state);
-      /*
-    }
-    else {
-      printf("unknown instruction: %x\n", instr);
-      printf("test number: %02x\n", memory[0x0200]);
-      return(0);
-    }
-    */
+    executeInstruction(instr, &state);
 
     if (initialPc == state.pc) {
       printf("ERROR: did not move to a new instruction\n");
@@ -82,14 +62,11 @@ int main(int argc, char **argv)
     instructionsExecuted++;
 
     if (instructionsExecuted > 50000000) {
-    //if (instructionsExecuted > 8) {
       printf("Stopping due to instruction limit.\n");
       printf("test number: %02x\n", memory[0x0200]);
       return(0);
     }
   }
-
-  fclose(file);
 
   return(0);
 }
