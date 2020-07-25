@@ -2,7 +2,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include "cpu.h"
-/*#include <windows.h>*/
+#include <windows.h>
 
 // the 6502 has 256 byte pages
 
@@ -34,15 +34,15 @@
 
 // TODO: consider storing the status flags in a single byte
 
-#define PRINT_INSTRUCTION 1
-#define PRINT_INSTRUCTION_DESCRIPTION 1
+/*#define PRINT_INSTRUCTION 1*/
+/*#define PRINT_INSTRUCTION_DESCRIPTION 1*/
 /*#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1*/
-#define PRINT_STATE 1
-#define PRINT_GAP 1
-#define PRINT_PC 1
+/*#define PRINT_STATE 1*/
+/*#define PRINT_GAP 1*/
+/*#define PRINT_PC 1*/
 
-void OutputDebugString(char *str) {
-}
+/*void OutputDebugString(char *str) {*/
+/*}*/
 
 void printState(struct Computer *state)
 {
@@ -62,6 +62,21 @@ void writeMemory(unsigned int memoryAddress, unsigned char value, struct Compute
   if (state->ppuClosure != 0) {
     state->ppuClosure->onMemoryWrite(memoryAddress, value, state);
   }
+}
+
+// TODO: should I call this from every place that reads memory?
+unsigned char readMemory(unsigned int memoryAddress, struct Computer *state) {
+  unsigned char val;
+
+  if (state->ppuClosure != 0) {
+    bool shouldOverride = false;
+    val = state->ppuClosure->onMemoryRead(memoryAddress, state, &shouldOverride);
+    if (shouldOverride) {
+      return val;
+    }
+  }
+
+  return state->memory[memoryAddress];
 }
 
 void setNegativeFlag(unsigned char val, unsigned char *negativeFlag)
@@ -177,7 +192,7 @@ int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, st
 {
   unsigned int memoryAddress = 0;
   int length = getMemoryAddress(&memoryAddress, addressingMode, state);
-  *value = state->memory[memoryAddress];
+  *value = readMemory(memoryAddress, state);
 
   return length;
 }
@@ -570,7 +585,7 @@ void asl(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   {
     unsigned int memoryAddress = 0;
     length = getMemoryAddress(&memoryAddress, addressingMode, state);
-    unsigned char value = state->memory[memoryAddress];
+    unsigned char value = readMemory(memoryAddress, state);
 
     printInstruction(instr, length, state);
     printInstructionDescription("ASL", addressingMode, "arithmetic shift left of value", value);
@@ -610,7 +625,7 @@ void rol(unsigned char instr, enum AddressingMode addressingMode, struct Compute
   {
     unsigned int memoryAddress = 0;
     length = getMemoryAddress(&memoryAddress, addressingMode, state);
-    unsigned char value = state->memory[memoryAddress];
+    unsigned char value = readMemory(memoryAddress, state);
 
     printInstruction(instr, length, state);
     printInstructionDescription("ROL", addressingMode, "rotate left of value %02x", value);
@@ -705,15 +720,16 @@ void inc(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 {
   unsigned int memoryAddress = 0;
   int length = getMemoryAddress(&memoryAddress, addressingMode, state);
-  unsigned char *value = &state->memory[memoryAddress];
+  unsigned char value = readMemory(memoryAddress, state);
 
-  *value = *value + 1;
+  value = value + 1;
+  writeMemory(memoryAddress, value, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("INC", addressingMode, "increment value at memory address %x to be %02x", memoryAddress, *value);
+  printInstructionDescription("INC", addressingMode, "increment value at memory address %x to be %02x", memoryAddress, value);
 
-  setZeroFlag(*value, &state->zeroFlag);
-  setNegativeFlag(*value, &state->negativeFlag);
+  setZeroFlag(value, &state->zeroFlag);
+  setNegativeFlag(value, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
@@ -722,15 +738,16 @@ void dec(unsigned char instr, enum AddressingMode addressingMode, struct Compute
 {
   unsigned int memoryAddress = 0;
   int length = getMemoryAddress(&memoryAddress, addressingMode, state);
-  unsigned char *value = &state->memory[memoryAddress];
+  unsigned char value = readMemory(memoryAddress, state);
 
-  *value = *value - 1;
+  value = value - 1;
+  writeMemory(memoryAddress, value, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("DEC", addressingMode, "decrement value at memory address %x to be %02x", memoryAddress, *value);
+  printInstructionDescription("DEC", addressingMode, "decrement value at memory address %x to be %02x", memoryAddress, value);
 
-  setZeroFlag(*value, &state->zeroFlag);
-  setNegativeFlag(*value, &state->negativeFlag);
+  setZeroFlag(value, &state->zeroFlag);
+  setNegativeFlag(value, &state->negativeFlag);
 
   state->pc += (1 + length);
 }
@@ -956,7 +973,7 @@ signed char branchIfTrue(unsigned char val, unsigned char instr, enum Addressing
 {
   int length = 1;
   printInstruction(instr, length, state);
-  signed char relativeDisplacement = state->memory[state->pc+1];
+  signed char relativeDisplacement = readMemory(state->pc+1, state);
   signed char branchedByRelativeDisplacement = 0;
 
   if (val == 1) 

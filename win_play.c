@@ -203,20 +203,60 @@ void setPPUData(unsigned char value, struct PPU *ppu, int inc)
 // TODO: I'm not so sure I want this to be the final mechanism to handle PPU/CPU communication.
 void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Computer *state) 
 {
+  struct PPU *ppu = state->ppuClosure->ppu;
   if (memoryAddress == 0x2006) {
-    struct PPU *ppu = state->ppuClosure->ppu;
     setPPUAddr(value, ppu);
-    print("\n\n\n>>>>>>>>>>>>>>>>>> CPU is writing this to 0x2006: %02x!\n\n\n", value);
   } else if (memoryAddress == 0x2007) {
-    struct PPU *ppu = state->ppuClosure->ppu;
     int inc = 1;
     if (state->memory[0x2000] >> 3 & 0x01 == 1) {
       inc = 32;
     }
     setPPUData(value, ppu, inc);
+  } else if (memoryAddress == 0x2001) {
+    ppu->mask = value;
   }
 }
 
+unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride) {
+  if (memoryAddress == 0x2002) {
+    struct PPU *ppu = state->ppuClosure->ppu;
+    ppu->status = ppu->status ^ 0x80; // clear vblank flag
+    ppu->ppuAddrGateLow = 0;
+    ppu->ppuAddrGateHigh = 0;
+    *shouldOverride = true;
+    return ppu->status; 
+  }
+
+  *shouldOverride = false;
+  return 0;
+}
+
+
+void ppuTick(struct PPU *ppu, struct Computer *state)
+{
+  print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);
+  if (ppu->scanline >= 241) {  // vblank
+    if (ppu->scanline == 241 && ppu->scanlineClockCycle == 1) {
+      print("NOTIFYING VBLANK START\n");
+      ppu->status = ppu->status | 0x80; // set vblank flag
+      triggerNmiInterrupt(state);
+    }
+  } else if (ppu->scanline == -1) {
+    if (ppu->scanlineClockCycle == 1) {
+      print("NOTIFYING VBLANK OVER\n");
+      ppu->status = ppu->status ^ 0x80; // clear vblank flag
+    }
+  }
+
+  ppu->scanlineClockCycle++;
+  if (ppu->scanlineClockCycle == 341) {
+    ppu->scanline++;
+    ppu->scanlineClockCycle = 0;
+    if (ppu->scanline == 261) {
+      ppu->scanline = -1;
+    }
+  }
+}
 
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
@@ -307,7 +347,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   // TODO: might as well just read chrRom right into ppuMemory, right?
   memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
-  struct PPU ppu = { ppuMemory }; 
+  struct PPU ppu = { .memory = ppuMemory, .scanline = -1 };   // TODO: make a struct initializer
 
   // Prep video buffer and bitmap info
   videoBuffer = malloc(VIDEO_BUFFER_WIDTH * VIDEO_BUFFER_HEIGHT * 4);
@@ -359,7 +399,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   printf("memory address to start is: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
   int memoryAddressToStartAt = (memory[0xFFFD] << 8) | memory[0xFFFC];
 
-  struct PPUClosure ppuClosure = { .ppu = &ppu, .onMemoryWrite = &onCPUMemoryWrite };
+  struct PPUClosure ppuClosure = { .ppu = &ppu, .onMemoryWrite = &onCPUMemoryWrite, .onMemoryRead = &onCPUMemoryRead };
 
   struct Computer state = { .memory = memory, .ppuClosure = &ppuClosure };
   state.pc = memoryAddressToStartAt;
@@ -367,7 +407,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   int instructionsExecuted = 0;
   unsigned char instr = 0;
 
-  int instructionLimit = 18000;
+  int instructionLimit = 36000;
   /*int instructionLimit = 300;*/
 
   // what I'm seeing Donkey Kong do:
@@ -419,9 +459,15 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     {
       executeInstruction(instr, &state);
 
-      char str[500];
-      sprintf(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);
-      OutputDebugString(str);
+      // TODO: get number of cycles for the executed instruction and do 3 ppu ticks per cycle
+      ppuTick(&ppu, &state);
+      ppuTick(&ppu, &state);
+      ppuTick(&ppu, &state);
+      ppuTick(&ppu, &state);
+      ppuTick(&ppu, &state);
+      ppuTick(&ppu, &state);
+
+      /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
     }
 
     if (instructionsExecuted == instructionLimit)
@@ -430,13 +476,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     instructionsExecuted++;
-
-    // pretend vertical blank has started just to see what happens next
-    if (instructionsExecuted == 5)
-    {
-      OutputDebugString("setting memory address 2002 to 0x80");
-      state.memory[0x2002] = 0x80; 
-    }
 
     HDC deviceContext = GetDC(windowHandle);
 
