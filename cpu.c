@@ -1221,7 +1221,10 @@ enum AddressingMode addressingModes[256] = {
 void executeInstruction(unsigned char instr, struct Computer *state)
 {
 #ifdef PRINT_PC
-  printf("PC: %04x\n", state->pc);
+  char str[20];
+  sprintf(str, "PC: %04x\n", state->pc);
+  printf(str);
+  OutputDebugString(str);
 #endif
 
   instructions[instr](instr, addressingModes[instr], state);

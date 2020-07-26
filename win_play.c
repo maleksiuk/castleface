@@ -67,23 +67,42 @@ void print(const char *format, ...) {
   OutputDebugString(str);
 }
 
-void renderToVideoBuffer(char *ppuMemory) 
+void dumpNametable(int num, const struct PPU *ppu)
 {
-  int baseNametableAddress = 0x2000; // because of value read from $2000 (bits 0 and 1); but this will change over time I bet
-  // int spriteImageStart = 0x0000;  // because of value read from $2000 (bit 3)
-  int backgroundImageStart = 0x1000;  // because of value read from $2000 (bit 4)
+  print("dumping!\n\n");
+  unsigned char control = ppu->control;
+  int baseNametableAddress = 0x2000 + 0x0400 * num;
+  
+  unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
+  int backgroundImageStart = 0x1000 * backgroundPatternTableAddressCode;
 
   int tileRow = 0;
   int tileCol = 0;
-  int tileColPixel = 0;
 
+  FILE *file;
+  char filename[30];
+  sprintf(filename, "nametable-%d.dump", num);
+  file = fopen(filename, "w+");
+
+  // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes
   int nametableByteIndex = 0;
   for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1) {
-    // if nametableByteIndex = 5, it should be tileRow 0 and tileCol 4
-    // if nametableByteIndex = 35, it should be tileRow 1 and tileCol 3
-    // if nametableByteIndex = 70, it should be tileRow 2 and tileCol 5
     tileRow = nametableByteIndex / 32;
     tileCol = nametableByteIndex % 32;
+
+    int address = baseNametableAddress + tileRow*32 + tileCol;
+    unsigned char val = ppu->memory[address];
+
+    fprintf(file, "%02x", val);
+    if (tileCol == 31) {
+      fprintf(file, "\n");
+    } else {
+      fprintf(file, " ");
+    }
+  }
+
+  fclose(file);
+}
 
     /*
      *
@@ -93,47 +112,51 @@ void renderToVideoBuffer(char *ppuMemory)
      *
      */
 
+// super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
+void renderToVideoBuffer(struct PPU *ppu) 
+{
+  unsigned char control = ppu->control;
+
+  // 0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00
+  unsigned char baseNametableAddressCode = (control & 0x02) | (control & 0x01);
+  int baseNametableAddress = 0x2000 + 0x0400 * baseNametableAddressCode;
+  
+  // 0: $0000; 1: $1000
+  unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
+  int backgroundImageStart = 0x1000 * backgroundPatternTableAddressCode;
+
+  int tileRow = 0;
+  int tileCol = 0;
+  int tileColPixel = 0;
+
+  // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes
+  int nametableByteIndex = 0;
+  for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1) {
+    tileRow = nametableByteIndex / 32;
+    tileCol = nametableByteIndex % 32;
+    /*print("tileRow: %d, tileCol: %d\n", tileRow, tileCol);*/
+
     int address = baseNametableAddress + tileRow*32 + tileCol;
+    /*print("nametable address: %04x\n", address);*/
 
-    // if base address is $2000, tileRow = 3, and tileCol = 2
-    // we want address $2000 + 3*32 + tileCol, maybe?
-
-    /*char str2[500];*/
-    /*sprintf(str2, "index: %d; tileRow %d, tileCol %d, - address in nametable is %x\n", nametableByteIndex, tileRow, tileCol, address);*/
-    /*OutputDebugString(str2);*/
-
-    unsigned char val = ppuMemory[address];
-
-    // super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
-
-    // I think val is an índex into the background table.
+    // val is an índex into the background pattern table
+    unsigned char val = ppu->memory[address];
 
     // 16 because the pattern table comes in 16 byte chunks 
     int addressOfBackgroundTile = backgroundImageStart + (val * 16);
 
-    // temporarily lock it down to one background image. Try to repeat that on every tile.
-    // int addressOfBackgroundTile = backgroundImageStart + 16;
-
-    // let's say we're on tileRow 3, tileCol 18 
-    // what pixel does it start on?
-    // int tilePixel = tileRow * VIDEO_BUFFER_WIDTH + tileCol * 8;
-
     int tileRowPixel = tileRow * 8;
     tileColPixel = tileCol * 8;
 
-    // chrRom[addressOfBackgroundTile]
-
-    /*char str[500];*/
-    /*sprintf(str, "index: %d - about to render background tile at address %x\n", nametableByteIndex, addressOfBackgroundTile);*/
-    /*OutputDebugString(str);*/
+    /*print("(row: %d, col: %d) - about to render background tile. Index into bg pattern table: %x\n", tileRow, tileCol, val);*/
 
     // these row/col are within the 8x8 tile
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
         int bit = 7 - col;
 
-        unsigned char bit1 = (ppuMemory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
-        unsigned char bit0 = (ppuMemory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
+        unsigned char bit1 = (ppu->memory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
+        unsigned char bit0 = (ppu->memory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
 
         uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
         videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
@@ -196,6 +219,7 @@ void setPPUAddr(unsigned char value, struct PPU *ppu)
 
 void setPPUData(unsigned char value, struct PPU *ppu, int inc) 
 {
+  print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);
   ppu->memory[ppu->ppuAddr] = value;
   ppu->ppuAddr = ppu->ppuAddr + inc;
 }
@@ -204,16 +228,22 @@ void setPPUData(unsigned char value, struct PPU *ppu, int inc)
 void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Computer *state) 
 {
   struct PPU *ppu = state->ppuClosure->ppu;
+
   if (memoryAddress == 0x2006) {
     setPPUAddr(value, ppu);
   } else if (memoryAddress == 0x2007) {
     int inc = 1;
-    if (state->memory[0x2000] >> 3 & 0x01 == 1) {
+    if (ppu->control >> 3 & 0x01 == 1) {
       inc = 32;
     }
     setPPUData(value, ppu, inc);
   } else if (memoryAddress == 0x2001) {
     ppu->mask = value;
+  } else if (memoryAddress == 0x2000) {
+    ppu->control = value;
+  } else if (memoryAddress == 0x2005) {
+    // scroll
+    print("******** SCROLL 0x2005 write\n");
   }
 }
 
@@ -225,6 +255,14 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
     ppu->ppuAddrGateHigh = 0;
     *shouldOverride = true;
     return ppu->status; 
+  } else if (memoryAddress == 0x2007) {
+    struct PPU *ppu = state->ppuClosure->ppu;
+    print("READING 0x2007 *************************\n\n");
+    int inc = 1;
+    if (ppu->control >> 3 & 0x01 == 1) {
+      inc = 32;
+    }
+    ppu->ppuAddr = ppu->ppuAddr + inc;
   }
 
   *shouldOverride = false;
@@ -234,16 +272,16 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
 
 void ppuTick(struct PPU *ppu, struct Computer *state)
 {
-  print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);
+  /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   if (ppu->scanline >= 241) {  // vblank
     if (ppu->scanline == 241 && ppu->scanlineClockCycle == 1) {
-      print("NOTIFYING VBLANK START\n");
+      /*print("NOTIFYING VBLANK START\n");*/
       ppu->status = ppu->status | 0x80; // set vblank flag
       triggerNmiInterrupt(state);
     }
   } else if (ppu->scanline == -1) {
     if (ppu->scanlineClockCycle == 1) {
-      print("NOTIFYING VBLANK OVER\n");
+      /*print("NOTIFYING VBLANK OVER\n");*/
       ppu->status = ppu->status ^ 0x80; // clear vblank flag
     }
   }
@@ -263,9 +301,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 {
   unsigned char header[16];
   FILE *file;
-
-  unsigned char test;
-  printf("sizeof unsigned char: %lu\n", sizeof(test));
 
   file = fopen("donkey_kong.nes", "rb");
 
@@ -407,8 +442,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   int instructionsExecuted = 0;
   unsigned char instr = 0;
 
-  int instructionLimit = 36000;
-  /*int instructionLimit = 300;*/
+  /*int instructionLimit = 36000;*/
+  int instructionLimit = 360000;
 
   // what I'm seeing Donkey Kong do:
   //
@@ -443,8 +478,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     // just temporarily slow its roll
-    if (loopCount % 50 == 0) {
-      renderToVideoBuffer(ppu.memory);
+    if (loopCount % 200 == 0) {
+      renderToVideoBuffer(&ppu);
     }
 
   // Donkey Kong is setting 2000 (first ppu reg) to 00010000, indicating that the background table address is $1000 (in the CHR ROM I believe)
@@ -468,6 +503,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       ppuTick(&ppu, &state);
 
       /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
+    }
+
+    if (instructionsExecuted == 18000) {
+      /*dumpNametable(0, &ppu);*/
     }
 
     if (instructionsExecuted == instructionLimit)

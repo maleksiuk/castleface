@@ -12,6 +12,7 @@ struct PPU
   bool ppuAddrSetLow;
 
   // https://wiki.nesdev.com/w/index.php/PPU_registers
+  unsigned char control; // mapped to CPU address $2000
   unsigned char mask;    // mapped to CPU address $2001 
   unsigned char status;  // mapped to CPU address $2002
 
