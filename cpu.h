@@ -27,7 +27,7 @@ struct Computer
   struct PPUClosure *ppuClosure;
 };
 
-void executeInstruction(unsigned char instr, struct Computer *state);
+int executeInstruction(unsigned char instr, struct Computer *state);
 void triggerIrqInterrupt(struct Computer *state);
 void fireIrqInterrupt(struct Computer *state);
 void triggerNmiInterrupt(struct Computer *state);

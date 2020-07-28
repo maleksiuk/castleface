@@ -220,6 +220,12 @@ void setPPUAddr(unsigned char value, struct PPU *ppu)
 void setPPUData(unsigned char value, struct PPU *ppu, int inc) 
 {
   print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);
+  /*
+  if (ppu->ppuAddr > 0x3FFF) {
+    print("trying to write out of ppu bounds!\n");
+    return;
+  }
+  */
   ppu->memory[ppu->ppuAddr] = value;
   ppu->ppuAddr = ppu->ppuAddr + inc;
 }
@@ -492,15 +498,21 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     if (instructionsExecuted < instructionLimit) 
     {
-      executeInstruction(instr, &state);
+      int cycles = executeInstruction(instr, &state);
 
-      // TODO: get number of cycles for the executed instruction and do 3 ppu ticks per cycle
-      ppuTick(&ppu, &state);
-      ppuTick(&ppu, &state);
-      ppuTick(&ppu, &state);
-      ppuTick(&ppu, &state);
-      ppuTick(&ppu, &state);
-      ppuTick(&ppu, &state);
+      for (int i = 0; i < 6; i++) {
+        ppuTick(&ppu, &state);
+      }
+
+      // I thought three PPU ticks per CPU cycle was meant to be an ok way to emulate things, but if I do this
+      // then the Donkey Kong title screen doesn't show up. I need to debug what's going on there.
+      /*
+      for (int i = 0; i < cycles; i++) {
+        ppuTick(&ppu, &state);
+        ppuTick(&ppu, &state);
+        ppuTick(&ppu, &state);
+      }
+      */
 
       /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
     }
