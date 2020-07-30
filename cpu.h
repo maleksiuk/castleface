@@ -25,6 +25,7 @@ struct Computer
   bool nmiPending;
 
   struct PPUClosure *ppuClosure;
+  unsigned int totalCyclesCompleted;
 };
 
 int executeInstruction(unsigned char instr, struct Computer *state);

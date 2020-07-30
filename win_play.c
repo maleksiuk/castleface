@@ -219,14 +219,18 @@ void setPPUAddr(unsigned char value, struct PPU *ppu)
 
 void setPPUData(unsigned char value, struct PPU *ppu, int inc) 
 {
-  print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);
-  /*
-  if (ppu->ppuAddr > 0x3FFF) {
-    print("trying to write out of ppu bounds!\n");
-    return;
+  if (ppu->mask >> 4 == 1) {
+    print("refusing to setPPUData because rendering is off\n");
+  } else {
+    print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);
+
+    if (ppu->ppuAddr > 0x3FFF) {
+      print("trying to write out of ppu bounds!\n");
+    } else {
+      ppu->memory[ppu->ppuAddr] = value;
+    }
   }
-  */
-  ppu->memory[ppu->ppuAddr] = value;
+
   ppu->ppuAddr = ppu->ppuAddr + inc;
 }
 
@@ -244,18 +248,20 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     }
     setPPUData(value, ppu, inc);
   } else if (memoryAddress == 0x2001) {
+    print("setting mask to value %02x\n", value);
     ppu->mask = value;
   } else if (memoryAddress == 0x2000) {
     ppu->control = value;
   } else if (memoryAddress == 0x2005) {
     // scroll
-    print("******** SCROLL 0x2005 write\n");
+    /*print("******** SCROLL 0x2005 write\n");*/
   }
 }
 
 unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride) {
   if (memoryAddress == 0x2002) {
     struct PPU *ppu = state->ppuClosure->ppu;
+    print("clearing vblank due to reading 0x2002\n");
     ppu->status = ppu->status ^ 0x80; // clear vblank flag
     ppu->ppuAddrGateLow = 0;
     ppu->ppuAddrGateHigh = 0;
@@ -263,7 +269,7 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
     return ppu->status; 
   } else if (memoryAddress == 0x2007) {
     struct PPU *ppu = state->ppuClosure->ppu;
-    print("READING 0x2007 *************************\n\n");
+    /*print("READING 0x2007 *************************\n\n");*/
     int inc = 1;
     if (ppu->control >> 3 & 0x01 == 1) {
       inc = 32;
@@ -281,19 +287,23 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
   /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   if (ppu->scanline >= 241) {  // vblank
     if (ppu->scanline == 241 && ppu->scanlineClockCycle == 1) {
-      /*print("NOTIFYING VBLANK START\n");*/
+      print("NOTIFYING VBLANK START\n");
       ppu->status = ppu->status | 0x80; // set vblank flag
-      triggerNmiInterrupt(state);
+      if (ppu->control >> 7 == 1) {
+        print("Triggering NMI as part of vblank start\n");
+        triggerNmiInterrupt(state);
+      }
     }
   } else if (ppu->scanline == -1) {
     if (ppu->scanlineClockCycle == 1) {
-      /*print("NOTIFYING VBLANK OVER\n");*/
+      print("NOTIFYING VBLANK OVER\n");
       ppu->status = ppu->status ^ 0x80; // clear vblank flag
     }
   }
 
   ppu->scanlineClockCycle++;
   if (ppu->scanlineClockCycle == 341) {
+    print("done all scanlines\n");
     ppu->scanline++;
     ppu->scanlineClockCycle = 0;
     if (ppu->scanline == 261) {
@@ -366,7 +376,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     // TODO: free the other memory I've allocated?
     return(0);
   }
-
 
   unsigned char *chrRom;
   chrRom = (unsigned char *) malloc(sizeOfChrRomInBytes);
@@ -500,19 +509,17 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     {
       int cycles = executeInstruction(instr, &state);
 
+      print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);
+
+      /*
       for (int i = 0; i < 6; i++) {
         ppuTick(&ppu, &state);
       }
+      */
 
-      // I thought three PPU ticks per CPU cycle was meant to be an ok way to emulate things, but if I do this
-      // then the Donkey Kong title screen doesn't show up. I need to debug what's going on there.
-      /*
-      for (int i = 0; i < cycles; i++) {
-        ppuTick(&ppu, &state);
-        ppuTick(&ppu, &state);
+      for (int i = 0; i < cycles*3; i++) {
         ppuTick(&ppu, &state);
       }
-      */
 
       /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
     }

@@ -37,11 +37,11 @@
 // TODO: I think every time I say 'nibble' I actually mean 'byte'. Fix those names.
 
 /*#define PRINT_INSTRUCTION 1*/
-/*#define PRINT_INSTRUCTION_DESCRIPTION 1*/
-/*#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1*/
-/*#define PRINT_STATE 1*/
-/*#define PRINT_GAP 1*/
-/*#define PRINT_PC 1*/
+#define PRINT_INSTRUCTION_DESCRIPTION 1
+#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1
+#define PRINT_STATE 1
+#define PRINT_GAP 1
+#define PRINT_PC 1
 
 /*void OutputDebugString(char *str) {*/
 /*}*/
@@ -72,7 +72,7 @@ void printState(struct Computer *state)
   unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (0 << 4)
     | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
   char str[500];
-  sprintf(str, "State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x Flags=%02x\n", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister, processorStatus);
+  sprintf(str, "State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x Flags=%02x Cycles: %d\n", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister, processorStatus, state->totalCyclesCompleted);
   printf(str);
   OutputDebugString(str);
 #endif
@@ -445,7 +445,7 @@ int sta(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("STA", addressingMode, "set memory address %x to acc value %02x", memoryAddress, state->acc);
+  printInstructionDescription("STA", addressingMode, "set memory address %04x to acc value %02x", memoryAddress, state->acc);
 
   writeMemory(memoryAddress, state->acc, state);
   state->pc += (1 + length);
@@ -458,7 +458,7 @@ int stx(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("STX", addressingMode, "set memory address %x to x value %02x", memoryAddress, state->xRegister);
+  printInstructionDescription("STX", addressingMode, "set memory address %04x to x value %02x", memoryAddress, state->xRegister);
 
   writeMemory(memoryAddress, state->xRegister, state);
   state->pc += (1 + length);
@@ -471,7 +471,7 @@ int sty(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("STY", addressingMode, "set memory address %x to y value %02x", memoryAddress, state->yRegister);
+  printInstructionDescription("STY", addressingMode, "set memory address %04x to y value %02x", memoryAddress, state->yRegister);
 
   writeMemory(memoryAddress, state->yRegister, state);
   state->pc += (1 + length);
@@ -1288,6 +1288,7 @@ void fireIrqInterrupt(struct Computer *state) {
   state->pc = (state->memory[0xffff] << 8) | state->memory[0xfffe];
 }
 
+// TODO: return number of cycles for interrupts
 void fireNmiInterrupt(struct Computer *state) {
   printf("************ FIRING IT (NMI)\n\n");
   state->nmiPending = false;
@@ -1358,6 +1359,7 @@ int executeInstruction(unsigned char instr, struct Computer *state)
 #endif
 
   int numCycles = instructions[instr](instr, addressingModes[instr], state);
+  state->totalCyclesCompleted += numCycles;
 
   if (state->nmiPending) {
     fireNmiInterrupt(state);
