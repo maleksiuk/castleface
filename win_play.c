@@ -242,11 +242,7 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
   if (memoryAddress == 0x2006) {
     setPPUAddr(value, ppu);
   } else if (memoryAddress == 0x2007) {
-    int inc = 1;
-    if (ppu->control >> 3 & 0x01 == 1) {
-      inc = 32;
-    }
-    setPPUData(value, ppu, inc);
+    setPPUData(value, ppu, vramIncrement(ppu));
   } else if (memoryAddress == 0x2001) {
     print("setting mask to value %02x\n", value);
     ppu->mask = value;
@@ -255,6 +251,14 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
   } else if (memoryAddress == 0x2005) {
     // scroll
     /*print("******** SCROLL 0x2005 write\n");*/
+  }
+
+  if (value == 0x62) {
+    if (memoryAddress != 0x2007) {
+      print("!!!!! we might be writing stuff that later gets copied into the nametable (addr: %04x)\n", memoryAddress);
+    } else {
+      print("!!!!! writing some good stuff into the nametable's addr %04x\n", ppu->ppuAddr);
+    }
   }
 }
 
@@ -270,17 +274,40 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
   } else if (memoryAddress == 0x2007) {
     struct PPU *ppu = state->ppuClosure->ppu;
     /*print("READING 0x2007 *************************\n\n");*/
-    int inc = 1;
-    if (ppu->control >> 3 & 0x01 == 1) {
-      inc = 32;
-    }
-    ppu->ppuAddr = ppu->ppuAddr + inc;
+    ppu->ppuAddr = ppu->ppuAddr + vramIncrement(ppu);
   }
 
   *shouldOverride = false;
   return 0;
 }
 
+int vramIncrement(struct PPU *ppu) {
+  if (ppu->control >> 2 & 0x01 == 1) {
+    return 32;
+  } else {
+    return 1;
+  }
+}
+
+/*
+   looking at mesen, it's cycling on c7e1 and c7e4 (with a subroutine happening as part of it).
+   an nmi happens and so a screen drawing occurs.
+
+
+   in prep for showing the donkey kong level (the demo one):
+f216: drawing some stuff into nametable. look to me like it's getting it from cpu memory such as $F671
+
+   looks like instructions $F309 and area are changing memory in the $0330 range. I think it's to make
+   donkey kong move
+
+
+   ok, so I think we're drawing the donkey kong letters now:
+   at F216, it's getting a 62 from $F8F8 and populating name table memory such as $2103.
+   the 'vertical write' flag is on. is that the thing that says how to increment? because it
+   is definitely writing vertically.
+
+
+   */
 
 void ppuTick(struct PPU *ppu, struct Computer *state)
 {
@@ -303,10 +330,10 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
 
   ppu->scanlineClockCycle++;
   if (ppu->scanlineClockCycle == 341) {
-    print("done all scanlines\n");
     ppu->scanline++;
     ppu->scanlineClockCycle = 0;
     if (ppu->scanline == 261) {
+      print("done all scanlines\n");
       ppu->scanline = -1;
     }
   }

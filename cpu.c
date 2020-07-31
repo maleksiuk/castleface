@@ -41,7 +41,7 @@
 #define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1
 #define PRINT_STATE 1
 #define PRINT_GAP 1
-#define PRINT_PC 1
+/*#define PRINT_PC 1*/
 
 /*void OutputDebugString(char *str) {*/
 /*}*/
@@ -72,7 +72,7 @@ void printState(struct Computer *state)
   unsigned char processorStatus = (state->negativeFlag << 7) | (state->overflowFlag << 6) | (1 << 5) | (0 << 4)
     | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
   char str[500];
-  sprintf(str, "State: A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x PC=%x S=%02x Flags=%02x Cycles: %d\n", state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->pc, state->stackRegister, processorStatus, state->totalCyclesCompleted);
+  sprintf(str, "State: PC=%04x A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x S=%02x Flags=%02x Cycles: %d\n", state->pc, state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->stackRegister, processorStatus, state->totalCyclesCompleted);
   printf(str);
   OutputDebugString(str);
 #endif
