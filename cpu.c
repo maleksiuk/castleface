@@ -37,11 +37,11 @@
 // TODO: I think every time I say 'nibble' I actually mean 'byte'. Fix those names.
 
 /*#define PRINT_INSTRUCTION 1*/
-#define PRINT_INSTRUCTION_DESCRIPTION 1
-#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1
-#define PRINT_STATE 1
-#define PRINT_GAP 1
-/*#define PRINT_PC 1*/
+/*#define PRINT_INSTRUCTION_DESCRIPTION 1*/
+/*#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1*/
+/*#define PRINT_STATE 1*/
+/*#define PRINT_GAP 1*/
+#define PRINT_PC 1
 
 /*void OutputDebugString(char *str) {*/
 /*}*/
@@ -1271,7 +1271,6 @@ void fireIrqInterrupt(struct Computer *state) {
   if (state->interruptDisable == 1) {
     return;
   }
-  printf("************ FIRING IT (IRQ)\n\n");
   state->irqPending = false;
 
   unsigned int pcToPushToStack = state->pc;
@@ -1290,7 +1289,6 @@ void fireIrqInterrupt(struct Computer *state) {
 
 // TODO: return number of cycles for interrupts
 void fireNmiInterrupt(struct Computer *state) {
-  printf("************ FIRING IT (NMI)\n\n");
   state->nmiPending = false;
 
   unsigned int pcToPushToStack = state->pc;

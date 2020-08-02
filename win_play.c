@@ -54,7 +54,6 @@ int running = 1;
 void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
 
-
 void print(const char *format, ...) {
   va_list arguments;
   va_start(arguments, format);
@@ -219,16 +218,12 @@ void setPPUAddr(unsigned char value, struct PPU *ppu)
 
 void setPPUData(unsigned char value, struct PPU *ppu, int inc) 
 {
-  if (ppu->mask >> 4 == 1) {
-    print("refusing to setPPUData because rendering is off\n");
-  } else {
-    print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);
+  /*print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);*/
 
-    if (ppu->ppuAddr > 0x3FFF) {
-      print("trying to write out of ppu bounds!\n");
-    } else {
-      ppu->memory[ppu->ppuAddr] = value;
-    }
+  if (ppu->ppuAddr > 0x3FFF) {
+    print("trying to write out of ppu bounds!\n");
+  } else {
+    ppu->memory[ppu->ppuAddr] = value;
   }
 
   ppu->ppuAddr = ppu->ppuAddr + inc;
@@ -250,7 +245,7 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     ppu->control = value;
   } else if (memoryAddress == 0x2005) {
     // scroll
-    /*print("******** SCROLL 0x2005 write\n");*/
+    print("*************** SCROLL 0x2005 write: %02x\n", value);
   }
 
   if (value == 0x62) {
@@ -290,22 +285,31 @@ int vramIncrement(struct PPU *ppu) {
 }
 
 /*
-   looking at mesen, it's cycling on c7e1 and c7e4 (with a subroutine happening as part of it).
-   an nmi happens and so a screen drawing occurs.
+   looking at mesen, it's cycling on c7e1 and c7e4 (with a subroutine at f4ed happening as part of it).
+    - is this a main game loop of sorts?
+
+    - used a disassembled donkey kong to learn some stuff
+
+    - $0044 holds a timer that controls the flipping between the menu and demo screens
+    - $0058 is 1 if in demo mode
+    - F4BC decrements the timer
+
+;Timer not expired - leave
+C953 : D0 07		bne	$C95C		;
+;Timer expired - activate demo mode
+C955 : A9 01		lda	#$01		; 
+C957 : 85 58		sta	$58		;	
+C959 : 4C B1 C9		jmp	$C9B1		; Prepare demo
+C95C : 60			rts			;
 
 
-   in prep for showing the donkey kong level (the demo one):
-f216: drawing some stuff into nametable. look to me like it's getting it from cpu memory such as $F671
+my game is looping on $C940 which is good as that's the intro screen handling code
 
-   looks like instructions $F309 and area are changing memory in the $0330 range. I think it's to make
-   donkey kong move
+for some reason the disassembled one's program mem addresses aren't always the same as mine :(
+for me the decrement program counters subroutine is at $f4ac and theirs is at F4BB
+maybe they used a slightly different rom? mine match up to what mesen shows.
 
-
-   ok, so I think we're drawing the donkey kong letters now:
-   at F216, it's getting a 62 from $F8F8 and populating name table memory such as $2103.
-   the 'vertical write' flag is on. is that the thing that says how to increment? because it
-   is definitely writing vertically.
-
+might be good to print out stuff just between $f4ac and f4c1, showing all the memory that is being decremented
 
    */
 
@@ -327,6 +331,8 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
       ppu->status = ppu->status ^ 0x80; // clear vblank flag
     }
   }
+
+  // TODO: move actual rendering here. Honour the mask flags.
 
   ppu->scanlineClockCycle++;
   if (ppu->scanlineClockCycle == 341) {
@@ -534,49 +540,69 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     if (instructionsExecuted < instructionLimit) 
     {
+      if (state.pc == 0xF4AC || state.pc == 0xF4C1) {
+        print("---> ");
+
+        /* To perform the 1/10 division, the $34 counter is used as a divider */
+        /*;		Normal counters		($35-$3E)	decremented once upon every execution of this routine*/
+        /*;		1/10th counters		($3F-$45)	decremented once every 10 executions of this routine*/
+
+        char str[150] = "";
+        for (int i = 0x34; i <= 0x45; i++) {
+          sprintf(str + strlen(str), "%02x: %02x ", i, state.memory[i]);
+        }
+        print("%s\n", str);
+      }
+
       int cycles = executeInstruction(instr, &state);
 
-      print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);
-
-      /*
-      for (int i = 0; i < 6; i++) {
-        ppuTick(&ppu, &state);
+      if (state.pc == 0xF4AC) {
+        print("$34: %02x, $44: %02x, $58: %02x\n", state.memory[0x34], state.memory[0x44], state.memory[0x58]);
       }
-      */
+
+      /*print("$44: %02x, $58: %02x\n", state.memory[0x44], state.memory[0x58]);*/
+      /*print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);*/
 
       for (int i = 0; i < cycles*3; i++) {
         ppuTick(&ppu, &state);
       }
 
       /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
+      /*print("\n");*/
     }
 
+    /*
     if (instructionsExecuted == 18000) {
-      /*dumpNametable(0, &ppu);*/
+      dumpNametable(0, &ppu);
     }
+    */
 
+    /*
     if (instructionsExecuted == instructionLimit)
     {
       OutputDebugString("no further instructions executed because limit hit\n");
     }
+    */
 
     instructionsExecuted++;
 
-    HDC deviceContext = GetDC(windowHandle);
+    if (loopCount % 500 == 0) {
+      HDC deviceContext = GetDC(windowHandle);
 
-    RECT clientRect;
-    GetClientRect(windowHandle, &clientRect);
-    int windowWidth = clientRect.right - clientRect.left;
-    int windowHeight = clientRect.bottom - clientRect.top;
+      RECT clientRect;
+      GetClientRect(windowHandle, &clientRect);
+      int windowWidth = clientRect.right - clientRect.left;
+      int windowHeight = clientRect.bottom - clientRect.top;
 
-    StretchDIBits(deviceContext,
-      0, 0, windowWidth, windowHeight,
-      0, 0, VIDEO_BUFFER_WIDTH, VIDEO_BUFFER_HEIGHT,
-      videoBuffer,
-      &bitmapInfo,
-      DIB_RGB_COLORS, SRCCOPY);
+      StretchDIBits(deviceContext,
+          0, 0, windowWidth, windowHeight,
+          0, 0, VIDEO_BUFFER_WIDTH, VIDEO_BUFFER_HEIGHT,
+          videoBuffer,
+          &bitmapInfo,
+          DIB_RGB_COLORS, SRCCOPY);
 
-    ReleaseDC(windowHandle, deviceContext);
+      ReleaseDC(windowHandle, deviceContext);
+    }
 
     loopCount++;
   }
