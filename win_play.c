@@ -490,9 +490,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   int instructionsExecuted = 0;
   unsigned char instr = 0;
 
-  /*int instructionLimit = 36000;*/
-  int instructionLimit = 360000;
-
   // what I'm seeing Donkey Kong do:
   //
   // instr 6169: finishes setting a ton of memory to 0
@@ -538,49 +535,39 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     instr = state.memory[state.pc];
 
-    if (instructionsExecuted < instructionLimit) 
-    {
-      if (state.pc == 0xF4AC || state.pc == 0xF4C1) {
-        print("---> ");
+    if (state.pc == 0xF4AC || state.pc == 0xF4C1) {
+      print("---> ");
 
-        /* To perform the 1/10 division, the $34 counter is used as a divider */
-        /*;		Normal counters		($35-$3E)	decremented once upon every execution of this routine*/
-        /*;		1/10th counters		($3F-$45)	decremented once every 10 executions of this routine*/
+      /* To perform the 1/10 division, the $34 counter is used as a divider */
+      /*;		Normal counters		($35-$3E)	decremented once upon every execution of this routine*/
+      /*;		1/10th counters		($3F-$45)	decremented once every 10 executions of this routine*/
 
-        char str[150] = "";
-        for (int i = 0x34; i <= 0x45; i++) {
-          sprintf(str + strlen(str), "%02x: %02x ", i, state.memory[i]);
-        }
-        print("%s\n", str);
+      char str[150] = "";
+      for (int i = 0x34; i <= 0x45; i++) {
+        sprintf(str + strlen(str), "%02x: %02x ", i, state.memory[i]);
       }
-
-      int cycles = executeInstruction(instr, &state);
-
-      if (state.pc == 0xF4AC) {
-        print("$34: %02x, $44: %02x, $58: %02x\n", state.memory[0x34], state.memory[0x44], state.memory[0x58]);
-      }
-
-      /*print("$44: %02x, $58: %02x\n", state.memory[0x44], state.memory[0x58]);*/
-      /*print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);*/
-
-      for (int i = 0; i < cycles*3; i++) {
-        ppuTick(&ppu, &state);
-      }
-
-      /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
-      /*print("\n");*/
+      print("%s\n", str);
     }
+
+    int cycles = executeInstruction(instr, &state);
+
+    if (state.pc == 0xF4AC) {
+      print("$34: %02x, $44: %02x, $58: %02x\n", state.memory[0x34], state.memory[0x44], state.memory[0x58]);
+    }
+
+    /*print("$44: %02x, $58: %02x\n", state.memory[0x44], state.memory[0x58]);*/
+    /*print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);*/
+
+    for (int i = 0; i < cycles*3; i++) {
+      ppuTick(&ppu, &state);
+    }
+
+    /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
+    /*print("\n");*/
 
     /*
     if (instructionsExecuted == 18000) {
       dumpNametable(0, &ppu);
-    }
-    */
-
-    /*
-    if (instructionsExecuted == instructionLimit)
-    {
-      OutputDebugString("no further instructions executed because limit hit\n");
     }
     */
 
