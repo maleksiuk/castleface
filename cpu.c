@@ -41,7 +41,7 @@
 /*#define PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES 1*/
 /*#define PRINT_STATE 1*/
 /*#define PRINT_GAP 1*/
-#define PRINT_PC 1
+/*#define PRINT_PC 1*/
 
 /*void OutputDebugString(char *str) {*/
 /*}*/

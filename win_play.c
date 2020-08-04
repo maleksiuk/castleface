@@ -8,28 +8,6 @@
 
 // helpful: https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
 
-/*
- * Possible next steps:
- *  [x]- make interrupts work. Look at the Klaus interrupt test.
- *  [x]- break out a PPU struct and put the chrRom in its memory.
- *  - make gates 2006/2007 on the PPU actually fill PPU memory.
- */
-
-/*
- *
- 
- What if I start by rendering 3x pixels where x is the number of cycles an instruction
- took for the CPU to do? That might be ok for Donkey Kong and will at least
- get me started.
-
- So my plan could be:
-  - CPU to return number of cycles.
-  - Mapping PPU registers so the CPU's writes to them actually do stuff.
-  - Interrupt stuff (probably).
-  - Write a PPU function to render the next N pixels. 
-
- */
-
 // the 6502 has 256 byte pages
 
 // might be helpful for PPU implementation:
@@ -64,6 +42,21 @@ void print(const char *format, ...) {
 
   printf(str);
   OutputDebugString(str);
+}
+
+void dumpOam(int num, uint8_t *oam)
+{
+  FILE *file;
+  char filename[30];
+  sprintf(filename, "oam-%d.dump", num);
+  file = fopen(filename, "w+");
+
+  for (int i = 0; i < 256; i+=4) {
+    fprintf(file, "ypos: %02x, tileindex: %02x, attr: %02x, xpos: %02x\n", oam[i], oam[i+1], oam[i+2], oam[i+3]);
+  }
+  print("done dumping oam to %s\n", filename);
+
+  fclose(file);
 }
 
 void dumpNametable(int num, const struct PPU *ppu)
@@ -198,6 +191,80 @@ void renderToVideoBuffer(struct PPU *ppu)
        OutputDebugString(str);
        */
   }
+
+  // play around with sprite rendering
+  {
+
+    int spritePatternTableAddress = 0x0000;
+    if (control >> 3 == 1) {
+      spritePatternTableAddress = 0x1000;
+    }
+
+    // TODO: render more than the first sprite
+    for (int i = 0; i < 4; i+=4) {
+      int tileIndex = ppu->oam[i+1];
+      uint8_t ypos = ppu->oam[i];
+      uint8_t xpos = ppu->oam[i+3];
+
+      // 16 because the pattern table comes in 16 byte chunks 
+      int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
+      unsigned char *sprite = &ppu->memory[addressOfSprite];
+
+      // screen is 256 width, 240 height
+      // x 38, y 7f
+      // 7f == 7*16 + 15*1 = 127
+      print("sprite is at location: xpos %02x, ypos %02x\n", xpos, ypos);
+      /*for (int i = 0; i < 16; i++) {*/
+      /*print("byte %d: %02x\n", i, sprite[i]);*/
+      /*}*/
+
+      uint32_t *videoBufferRow = (uint32_t *)videoBuffer;
+      videoBufferRow += (ypos * VIDEO_BUFFER_WIDTH) + xpos;
+
+      // 8x8 sprite
+      for (int row = 0; row < 8; row++) {
+        uint8_t lowByte = sprite[row];
+        uint8_t highByte = sprite[row+8];
+
+        videoBufferRow += VIDEO_BUFFER_WIDTH;
+        uint32_t *pixel = videoBufferRow;
+
+        for (int col = 0; col < 8; col++) {
+          int bitNumber = 7 - col;
+          uint8_t bit1 = (highByte >> bitNumber) & 0x01;
+          uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
+          int val = bit1 << 1 | bit0;
+          print("%d", val);
+
+          pixel += 1;
+
+          uint8_t red = 0;
+          uint8_t green = 0;
+          uint8_t blue = 0;
+          if (val == 0)
+          {
+          }
+          else if (val == 1)
+          {
+            blue = 0xFF;
+          }
+          else if (val == 2)
+          {
+            green = 0xFF;
+          }
+          else if (val == 3)
+          {
+            red = 0xFF;
+          }
+
+          *pixel = ((red << 16) | (green << 8) | blue);
+        }
+        print("\n");
+      }
+
+    }
+
+  }
 }
 
 // upper byte gets written first, then lower byte
@@ -234,26 +301,29 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
 {
   struct PPU *ppu = state->ppuClosure->ppu;
 
+  // TODO: consider using a table of function pointers
   if (memoryAddress == 0x2006) {
     setPPUAddr(value, ppu);
   } else if (memoryAddress == 0x2007) {
     setPPUData(value, ppu, vramIncrement(ppu));
   } else if (memoryAddress == 0x2001) {
-    print("setting mask to value %02x\n", value);
     ppu->mask = value;
   } else if (memoryAddress == 0x2000) {
     ppu->control = value;
   } else if (memoryAddress == 0x2005) {
     // scroll
-    print("*************** SCROLL 0x2005 write: %02x\n", value);
-  }
-
-  if (value == 0x62) {
-    if (memoryAddress != 0x2007) {
-      print("!!!!! we might be writing stuff that later gets copied into the nametable (addr: %04x)\n", memoryAddress);
-    } else {
-      print("!!!!! writing some good stuff into the nametable's addr %04x\n", ppu->ppuAddr);
-    }
+    /*print("*************** SCROLL 0x2005 write: %02x\n", value);*/
+  } else if (memoryAddress == 0x2003) {
+    ppu->oamAddr = value;
+  } else if (memoryAddress == 0x2004) {
+    // oamdata write
+  } else if (memoryAddress == 0x4014) {
+    int cpuAddr = value << 8;
+    /*print("[OAM] OAMDMA write. Will get data from CPU memory page %02x (addr: %04x). Oam addr is %02x\n", value, cpuAddr, ppu->oamAddr);*/
+    int numBytes = 256 - ppu->oamAddr;
+    memcpy(&ppu->oam[ppu->oamAddr], &state->memory[cpuAddr], numBytes);
+    /*dumpOam(1, ppu->oam);*/
+    /*ypos: 7f, tileindex: a2, attr: 00, xpos: 38*/
   }
 }
 
@@ -401,6 +471,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   unsigned char *ppuMemory;
   ppuMemory = (unsigned char *) calloc(1, 0x3FFF);
 
+  uint8_t *oam;
+  oam = (uint8_t *) calloc(256, sizeof(uint8_t));
+
   unsigned char *prgRom;
   prgRom = (unsigned char *) malloc(sizeOfPrgRomInBytes);
   if (prgRom == 0) 
@@ -430,7 +503,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   // TODO: might as well just read chrRom right into ppuMemory, right?
   memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
-  struct PPU ppu = { .memory = ppuMemory, .scanline = -1 };   // TODO: make a struct initializer
+  struct PPU ppu = { .memory = ppuMemory, .oam = oam, .scanline = -1 };   // TODO: make a struct initializer
 
   // Prep video buffer and bitmap info
   videoBuffer = malloc(VIDEO_BUFFER_WIDTH * VIDEO_BUFFER_HEIGHT * 4);
@@ -597,6 +670,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   free(videoBuffer);
   free(memory);
   free(ppuMemory);
+  free(oam);
   free(prgRom);
   free(chrRom);
   return 0;
