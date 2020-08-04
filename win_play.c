@@ -29,7 +29,7 @@ int running = 1;
 #define VIDEO_BUFFER_WIDTH 256
 #define VIDEO_BUFFER_HEIGHT 240
 
-void *videoBuffer;
+void *videoBuffer; // TODO: make this uint32_t?
 BITMAPINFO bitmapInfo = { 0 };
 
 void print(const char *format, ...) {
@@ -200,23 +200,18 @@ void renderToVideoBuffer(struct PPU *ppu)
       spritePatternTableAddress = 0x1000;
     }
 
-    // TODO: render more than the first sprite
-    for (int i = 0; i < 4; i+=4) {
+    for (int i = 0; i < 256; i+=4) {
       int tileIndex = ppu->oam[i+1];
       uint8_t ypos = ppu->oam[i];
       uint8_t xpos = ppu->oam[i+3];
+      // TODO: find docs on this. I'm seeing tons of ypos FF and xpos 0 sprites which I guess are 'empty'?
+      if (ypos > 240-8) {
+        continue;
+      }
 
       // 16 because the pattern table comes in 16 byte chunks 
       int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
       unsigned char *sprite = &ppu->memory[addressOfSprite];
-
-      // screen is 256 width, 240 height
-      // x 38, y 7f
-      // 7f == 7*16 + 15*1 = 127
-      print("sprite is at location: xpos %02x, ypos %02x\n", xpos, ypos);
-      /*for (int i = 0; i < 16; i++) {*/
-      /*print("byte %d: %02x\n", i, sprite[i]);*/
-      /*}*/
 
       uint32_t *videoBufferRow = (uint32_t *)videoBuffer;
       videoBufferRow += (ypos * VIDEO_BUFFER_WIDTH) + xpos;
@@ -234,9 +229,8 @@ void renderToVideoBuffer(struct PPU *ppu)
           uint8_t bit1 = (highByte >> bitNumber) & 0x01;
           uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
           int val = bit1 << 1 | bit0;
-          print("%d", val);
+          /*print("%d", val);*/
 
-          pixel += 1;
 
           uint8_t red = 0;
           uint8_t green = 0;
@@ -258,8 +252,10 @@ void renderToVideoBuffer(struct PPU *ppu)
           }
 
           *pixel = ((red << 16) | (green << 8) | blue);
+
+          pixel += 1;
         }
-        print("\n");
+        /*print("\n");*/
       }
 
     }
