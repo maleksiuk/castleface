@@ -32,6 +32,13 @@ int running = 1;
 void *videoBuffer; // TODO: make this uint32_t?
 BITMAPINFO bitmapInfo = { 0 };
 
+struct Color 
+{
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+};
+
 void print(const char *format, ...) {
   va_list arguments;
   va_start(arguments, format);
@@ -65,9 +72,6 @@ void dumpNametable(int num, const struct PPU *ppu)
   unsigned char control = ppu->control;
   int baseNametableAddress = 0x2000 + 0x0400 * num;
   
-  unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
-  int backgroundImageStart = 0x1000 * backgroundPatternTableAddressCode;
-
   int tileRow = 0;
   int tileCol = 0;
 
@@ -105,17 +109,34 @@ void dumpNametable(int num, const struct PPU *ppu)
      */
 
 // super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
-void renderToVideoBuffer(struct PPU *ppu) 
+void renderToVideoBuffer(struct PPU *ppu, struct Color *palette) 
 {
   unsigned char control = ppu->control;
+
+  /*
+  for (int paletteNumber = 0; paletteNumber < 4; paletteNumber++) {
+    print("palette number %d: ", paletteNumber);
+    for (int i = 0; i < 3; i++) {
+      int colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + i];
+      struct Color color = palette[colorIndex];
+      print("color%d: (index: %02x, color: %d %d %d) - ", i, colorIndex, color.red, color.green, color.blue);
+    }
+    print("\n");
+  }
+  */
+
+  uint8_t universalBackgroundColor = ppu->memory[0x3F00];
 
   // 0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00
   unsigned char baseNametableAddressCode = (control & 0x02) | (control & 0x01);
   int baseNametableAddress = 0x2000 + 0x0400 * baseNametableAddressCode;
+
+  // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
+  int attributeTableAddress = baseNametableAddress + 960;
   
   // 0: $0000; 1: $1000
   unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
-  int backgroundImageStart = 0x1000 * backgroundPatternTableAddressCode;
+  int backgroundPatternTableAddress = 0x1000 * backgroundPatternTableAddressCode;
 
   int tileRow = 0;
   int tileCol = 0;
@@ -126,23 +147,44 @@ void renderToVideoBuffer(struct PPU *ppu)
   for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1) {
     tileRow = nametableByteIndex / 32;
     tileCol = nametableByteIndex % 32;
-    /*print("tileRow: %d, tileCol: %d\n", tileRow, tileCol);*/
+
+    // want to find byte in attributeTable for tileRow, tileCol
+    int attributeBlockRow = tileRow / 4;  // 0 to 7
+    int attributeBlockCol = tileCol / 4;  // 0 to 7
+    uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
+
+    // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
+    int quadrantX = (tileCol - attributeBlockCol*4) / 2;
+    int quadrantY = (tileRow - attributeBlockRow*4) / 2;
+    int quadrantNumber = quadrantY << 1 | quadrantX;
+
+    // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
+    int paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
+
+    /*
+    int x = 9;
+    int y = 7;
+    if (tileCol == x && tileRow == y) {
+      print("tile (%d, %d): attribute data: %02x, palette number %d. attribRow: %d, attribCol: %d\n", x, y, attributeByte, paletteNumber, attributeBlockRow, attributeBlockCol);
+    }
+    */
+
+    /*print("tileRow: %d, tileCol: %d, palette Number %d\n", tileRow, tileCol, paletteNumber);*/
 
     int address = baseNametableAddress + tileRow*32 + tileCol;
-    /*print("nametable address: %04x\n", address);*/
 
     // val is an índex into the background pattern table
     unsigned char val = ppu->memory[address];
 
     // 16 because the pattern table comes in 16 byte chunks 
-    int addressOfBackgroundTile = backgroundImageStart + (val * 16);
+    int addressOfBackgroundTile = backgroundPatternTableAddress + (val * 16);
 
     int tileRowPixel = tileRow * 8;
     tileColPixel = tileCol * 8;
 
     /*print("(row: %d, col: %d) - about to render background tile. Index into bg pattern table: %x\n", tileRow, tileCol, val);*/
 
-    // these row/col are within the 8x8 tile
+    // iterate through each pixel in the 8x8 tile 
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
         int bit = 7 - col;
@@ -157,31 +199,27 @@ void renderToVideoBuffer(struct PPU *ppu)
 
         uint32_t *pixel = (uint32_t *)(videoBufferRow);
         pixel += (tileColPixel + col);
-        /*char str[500];*/
-        /*sprintf(str, "pixel - %d %d\n", (tileRowPixel + row), tileColPixel + col);*/
-        /*OutputDebugString(str);*/
 
         int val = bit1 << 1 | bit0;
-        uint8_t red = 0;
-        uint8_t green = 0;
-        uint8_t blue = 0;
-        if (val == 0)
-        {
-        }
-        else if (val == 1)
-        {
-          blue = 0xFF;
-        }
-        else if (val == 2)
-        {
-          green = 0xFF;
-        }
-        else if (val == 3)
-        {
-          red = 0xFF;
-        }
 
-        *pixel = ((red << 16) | (green << 8) | blue);
+/*$3F00 	Universal background color*/
+/*$3F01-$3F03 	Background palette 0*/
+/*$3F05-$3F07 	Background palette 1*/
+/*$3F09-$3F0B 	Background palette 2*/
+/*$3F0D-$3F0F 	Background palette 3 */
+        uint8_t colorIndex = universalBackgroundColor;
+        if (val > 0) {
+          colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
+        }
+        struct Color color = palette[colorIndex];
+
+        /*
+        if (tileRow == 4 && tileCol == 9) {
+          print("tile: (%d, %d), attr block: (%d, %d), quad #: %d, palette #: %d, val is %d, so color index is %d. RGB: %d %d %d\n", row, col, attributeBlockRow, attributeBlockCol, quadrantNumber, paletteNumber, val, colorIndex, color.red, color.green, color.blue);
+        }
+        */
+
+        *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
       }
     }
 
@@ -230,7 +268,6 @@ void renderToVideoBuffer(struct PPU *ppu)
           uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
           int val = bit1 << 1 | bit0;
           /*print("%d", val);*/
-
 
           uint8_t red = 0;
           uint8_t green = 0;
@@ -411,7 +448,6 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
   }
 }
 
-
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
   unsigned char header[16];
@@ -500,6 +536,19 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   // TODO: might as well just read chrRom right into ppuMemory, right?
   memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
   struct PPU ppu = { .memory = ppuMemory, .oam = oam, .scanline = -1 };   // TODO: make a struct initializer
+
+  // colours from http://www.thealmightyguru.com/Games/Hacking/Wiki/index.php/NES_Palette
+  // TODO: write them into a .pal file and read them out
+  struct Color palette[64] = {
+    {124,124,124},{0,0,252},{0,0,188},{68,40,188},{148,0,132},{168,0,32},{168,16,0},{136,20,0},
+    {80,48,0},{0,120,0},{0,104,0},{0,88,0},{0,64,88},{0,0,0},{0,0,0},{0,0,0},
+    {188,188,188},{0,120,248},{0,88,248},{104,68,252},{216,0,204},{228,0,88},{248,56,0},{228,92,16},
+    {172,124,0},{0,184,0},{0,168,0},{0,168,68},{0,136,136},{0,0,0},{0,0,0},{0,0,0},
+    {248,248,248},{60,188,252},{104,136,252},{152,120,248},{248,120,248},{248,88,152},{248,120,88},{252,160,68},
+    {248,184,0},{184,248,24},{88,216,84},{88,248,152},{0,232,216},{120,120,120},{0,0,0},{0,0,0},
+    {252,252,252},{164,228,252},{184,184,248},{216,184,248},{248,184,248},{248,164,192},{240,208,176},{252,224,168},
+    {248,216,120},{216,248,120},{184,248,184},{184,248,216},{0,252,252},{248,216,248},{0,0,0},{0,0,0}
+  };
 
   // Prep video buffer and bitmap info
   videoBuffer = malloc(VIDEO_BUFFER_WIDTH * VIDEO_BUFFER_HEIGHT * 4);
@@ -593,7 +642,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     // just temporarily slow its roll
     if (loopCount % 200 == 0) {
-      renderToVideoBuffer(&ppu);
+      renderToVideoBuffer(&ppu, palette);
     }
 
   // Donkey Kong is setting 2000 (first ppu reg) to 00010000, indicating that the background table address is $1000 (in the CHR ROM I believe)
