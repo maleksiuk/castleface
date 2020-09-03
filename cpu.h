@@ -26,6 +26,13 @@ struct Computer
 
   struct PPUClosure *ppuClosure;
   unsigned int totalCyclesCompleted;
+
+  struct KeyboardInput *keyboardInput;
+
+  // TODO: do we actually need pollController? Can we move these elsewhere?
+  bool pollController;
+  uint8_t currentButtonBit;
+  uint8_t buttons;
 };
 
 int executeInstruction(unsigned char instr, struct Computer *state);

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "cpu.h"
 #include "ppu.h"
+#include "win_play.h"
 
 // helpful: https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
 
@@ -329,6 +330,12 @@ void setPPUData(unsigned char value, struct PPU *ppu, int inc)
   ppu->ppuAddr = ppu->ppuAddr + inc;
 }
 
+void setButton(struct Computer *state, bool isButtonPressed, uint8_t position) {
+  if (isButtonPressed) {
+    state->buttons = state->buttons | position;
+  }
+}
+
 // TODO: I'm not so sure I want this to be the final mechanism to handle PPU/CPU communication.
 void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Computer *state) 
 {
@@ -357,13 +364,29 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     memcpy(&ppu->oam[ppu->oamAddr], &state->memory[cpuAddr], numBytes);
     /*dumpOam(1, ppu->oam);*/
     /*ypos: 7f, tileindex: a2, attr: 00, xpos: 38*/
+  } else if (memoryAddress == 0x4016) {
+    /*print("************ write to 0x4016: %02x\n", value);*/
+    state->pollController = (value == 1);
+    if (state->pollController) {
+      // copy keyboard input into buttons
+      state->buttons = 0; 
+      setButton(state, state->keyboardInput->up, 0x10); 
+      setButton(state, state->keyboardInput->down, 0x20); 
+      setButton(state, state->keyboardInput->left, 0x40); 
+      setButton(state, state->keyboardInput->right, 0x80); 
+      setButton(state, state->keyboardInput->select, 0x04); 
+      setButton(state, state->keyboardInput->start, 0x08); 
+      setButton(state, state->keyboardInput->a, 0x00); 
+      setButton(state, state->keyboardInput->b, 0x01);
+    }
+    state->currentButtonBit = 0;  // is this right?
   }
 }
 
 unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride) {
   if (memoryAddress == 0x2002) {
     struct PPU *ppu = state->ppuClosure->ppu;
-    print("clearing vblank due to reading 0x2002\n");
+    /*print("clearing vblank due to reading 0x2002\n");*/
     ppu->status = ppu->status ^ 0x80; // clear vblank flag
     ppu->ppuAddrGateLow = 0;
     ppu->ppuAddrGateHigh = 0;
@@ -373,6 +396,19 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
     struct PPU *ppu = state->ppuClosure->ppu;
     /*print("READING 0x2007 *************************\n\n");*/
     ppu->ppuAddr = ppu->ppuAddr + vramIncrement(ppu);
+  } else if (memoryAddress == 0x4016) {
+    /*print("*********** read from 0x4016 (val is %02x)\n", state->memory[0x4016]);*/
+    *shouldOverride = true;
+    if (state->pollController) {
+      /*print("**** polling the controller, so reading will just return state of first button (A)\n");*/
+      // return state of first button (A)
+      return state->buttons & 0x01;
+    } else {
+      unsigned char buttonValue = (state->buttons >> state->currentButtonBit) & 1;
+      /*print("**** (buttons: %02x) reading from button bit %d (value is %02x)\n", state->buttons, state->currentButtonBit, buttonValue);*/
+      state->currentButtonBit++;
+      return buttonValue;
+    }
   }
 
   *shouldOverride = false;
@@ -421,16 +457,16 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
   /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   if (ppu->scanline >= 241) {  // vblank
     if (ppu->scanline == 241 && ppu->scanlineClockCycle == 1) {
-      print("NOTIFYING VBLANK START\n");
+      /*print("NOTIFYING VBLANK START\n");*/
       ppu->status = ppu->status | 0x80; // set vblank flag
       if (ppu->control >> 7 == 1) {
-        print("Triggering NMI as part of vblank start\n");
+        /*print("Triggering NMI as part of vblank start\n");*/
         triggerNmiInterrupt(state);
       }
     }
   } else if (ppu->scanline == -1) {
     if (ppu->scanlineClockCycle == 1) {
-      print("NOTIFYING VBLANK OVER\n");
+      /*print("NOTIFYING VBLANK OVER\n");*/
       ppu->status = ppu->status ^ 0x80; // clear vblank flag
     }
   }
@@ -442,9 +478,18 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
     ppu->scanline++;
     ppu->scanlineClockCycle = 0;
     if (ppu->scanline == 261) {
-      print("done all scanlines\n");
+      /*print("done all scanlines\n");*/
       ppu->scanline = -1;
     }
+  }
+}
+
+void setKeyboardInput(bool *buttonValue, bool wasDown, bool isDown) {
+  if (wasDown && !isDown) {
+    *buttonValue = false;
+  }
+  if (!wasDown && isDown) {
+    *buttonValue = true;
   }
 }
 
@@ -600,9 +645,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   printf("memory address to start is: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
   int memoryAddressToStartAt = (memory[0xFFFD] << 8) | memory[0xFFFC];
 
+  struct KeyboardInput keyboardInput = { .up = false  };
   struct PPUClosure ppuClosure = { .ppu = &ppu, .onMemoryWrite = &onCPUMemoryWrite, .onMemoryRead = &onCPUMemoryRead };
 
-  struct Computer state = { .memory = memory, .ppuClosure = &ppuClosure };
+  struct Computer state = { .memory = memory, .keyboardInput = &keyboardInput, .ppuClosure = &ppuClosure };
   state.pc = memoryAddressToStartAt;
 
   int instructionsExecuted = 0;
@@ -625,15 +671,39 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     MSG msg = { 0 };
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE))
     {
-      if (msg.message == WM_LBUTTONDOWN)
-      {
-        OutputDebugString("left button down");
-      }
-
-      if (msg.message == WM_QUIT)
-      {
+      if (msg.message == WM_QUIT) {
         OutputDebugString("going to quit");
         running = 0;
+      } else if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP) {
+        uint8_t wasDown = ((msg.lParam & (1 << 30)) != 0);
+        uint8_t isDown = ((msg.lParam & (1 << 31)) == 0);
+
+        switch(msg.wParam) {
+          case 0x57: // w
+            setKeyboardInput(&keyboardInput.up, wasDown, isDown);
+            break;
+          case 0x53: // s
+            setKeyboardInput(&keyboardInput.down, wasDown, isDown);
+            break;
+          case 0x44: // d
+            setKeyboardInput(&keyboardInput.right, wasDown, isDown);
+            break;
+          case 0x41: // a
+            setKeyboardInput(&keyboardInput.left, wasDown, isDown);
+            break;
+          case 0x31: // 1
+            setKeyboardInput(&keyboardInput.select, wasDown, isDown);
+            break;
+          case 0x32: // 2
+            setKeyboardInput(&keyboardInput.start, wasDown, isDown);
+            break;
+          case 0x4B: // k 
+            setKeyboardInput(&keyboardInput.b, wasDown, isDown);
+            break;
+          case 0x4C: // l 
+            setKeyboardInput(&keyboardInput.a, wasDown, isDown);
+            break;
+        }
       }
 
       TranslateMessage(&msg);
@@ -641,7 +711,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     // just temporarily slow its roll
-    if (loopCount % 200 == 0) {
+    if (loopCount % 400 == 0) {
       renderToVideoBuffer(&ppu, palette);
     }
 
@@ -653,25 +723,13 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     instr = state.memory[state.pc];
 
-    if (state.pc == 0xF4AC || state.pc == 0xF4C1) {
-      print("---> ");
-
-      /* To perform the 1/10 division, the $34 counter is used as a divider */
-      /*;		Normal counters		($35-$3E)	decremented once upon every execution of this routine*/
-      /*;		1/10th counters		($3F-$45)	decremented once every 10 executions of this routine*/
-
-      char str[150] = "";
-      for (int i = 0x34; i <= 0x45; i++) {
-        sprintf(str + strlen(str), "%02x: %02x ", i, state.memory[i]);
-      }
-      print("%s\n", str);
-    }
-
     int cycles = executeInstruction(instr, &state);
 
+    /*
     if (state.pc == 0xF4AC) {
       print("$34: %02x, $44: %02x, $58: %02x\n", state.memory[0x34], state.memory[0x44], state.memory[0x58]);
     }
+    */
 
     /*print("$44: %02x, $58: %02x\n", state.memory[0x44], state.memory[0x58]);*/
     /*print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);*/
