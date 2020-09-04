@@ -240,13 +240,16 @@ void renderToVideoBuffer(struct PPU *ppu, struct Color *palette)
     }
 
     for (int i = 0; i < 256; i+=4) {
-      int tileIndex = ppu->oam[i+1];
       uint8_t ypos = ppu->oam[i];
+      uint8_t tileIndex = ppu->oam[i+1];
+      uint8_t attributes = ppu->oam[i+2];
       uint8_t xpos = ppu->oam[i+3];
       // TODO: find docs on this. I'm seeing tons of ypos FF and xpos 0 sprites which I guess are 'empty'?
       if (ypos > 240-8) {
         continue;
       }
+
+      bool flipHorizontally = attributes & 0x40;
 
       // 16 because the pattern table comes in 16 byte chunks 
       int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
@@ -262,13 +265,18 @@ void renderToVideoBuffer(struct PPU *ppu, struct Color *palette)
 
         videoBufferRow += VIDEO_BUFFER_WIDTH;
         uint32_t *pixel = videoBufferRow;
+        int pixelIncrement = 1;
+
+        if (flipHorizontally) {
+          *pixel += 8;
+          pixelIncrement = -1;
+        }
 
         for (int col = 0; col < 8; col++) {
           int bitNumber = 7 - col;
           uint8_t bit1 = (highByte >> bitNumber) & 0x01;
           uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
           int val = bit1 << 1 | bit0;
-          /*print("%d", val);*/
 
           uint8_t red = 0;
           uint8_t green = 0;
@@ -291,9 +299,8 @@ void renderToVideoBuffer(struct PPU *ppu, struct Color *palette)
 
           *pixel = ((red << 16) | (green << 8) | blue);
 
-          pixel += 1;
+          pixel += pixelIncrement;
         }
-        /*print("\n");*/
       }
 
     }
@@ -457,16 +464,15 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
   /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   if (ppu->scanline >= 241) {  // vblank
     if (ppu->scanline == 241 && ppu->scanlineClockCycle == 1) {
-      /*print("NOTIFYING VBLANK START\n");*/
+      /*print("VBLANK START\n");*/
       ppu->status = ppu->status | 0x80; // set vblank flag
       if (ppu->control >> 7 == 1) {
-        /*print("Triggering NMI as part of vblank start\n");*/
         triggerNmiInterrupt(state);
       }
     }
   } else if (ppu->scanline == -1) {
     if (ppu->scanlineClockCycle == 1) {
-      /*print("NOTIFYING VBLANK OVER\n");*/
+      /*print("VBLANK END\n");*/
       ppu->status = ppu->status ^ 0x80; // clear vblank flag
     }
   }
@@ -711,7 +717,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     // just temporarily slow its roll
-    if (loopCount % 400 == 0) {
+    if (loopCount % 500 == 0) {
+      /*print("render to video buffer\n");*/
       renderToVideoBuffer(&ppu, palette);
     }
 
