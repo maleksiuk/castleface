@@ -244,7 +244,11 @@ void renderToVideoBuffer(struct PPU *ppu, struct Color *palette)
       uint8_t tileIndex = ppu->oam[i+1];
       uint8_t attributes = ppu->oam[i+2];
       uint8_t xpos = ppu->oam[i+3];
+
+      /*print("i: %d, sprite xpos: %d, ypos: %d, tileIndex: %d\n", i, xpos, ypos, tileIndex);*/
+
       // TODO: find docs on this. I'm seeing tons of ypos FF and xpos 0 sprites which I guess are 'empty'?
+      // I think the docs are here: 'hide a sprite...' https://wiki.nesdev.com/w/index.php/PPU_OAM
       if (ypos > 240-8) {
         continue;
       }
@@ -281,19 +285,12 @@ void renderToVideoBuffer(struct PPU *ppu, struct Color *palette)
           uint8_t red = 0;
           uint8_t green = 0;
           uint8_t blue = 0;
-          if (val == 0)
-          {
-          }
-          else if (val == 1)
-          {
+          if (val == 0) {
+          } else if (val == 1) {
             blue = 0xFF;
-          }
-          else if (val == 2)
-          {
+          } else if (val == 2) {
             green = 0xFF;
-          }
-          else if (val == 3)
-          {
+          } else if (val == 3) {
             red = 0xFF;
           }
 
@@ -366,11 +363,10 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     // oamdata write
   } else if (memoryAddress == 0x4014) {
     int cpuAddr = value << 8;
-    /*print("[OAM] OAMDMA write. Will get data from CPU memory page %02x (addr: %04x). Oam addr is %02x\n", value, cpuAddr, ppu->oamAddr);*/
     int numBytes = 256 - ppu->oamAddr;
+    /*print("[OAM] OAMDMA write. Will get data from CPU memory page %02x (addr: %04x). Oam addr is %02x. Num bytes: %d\n", value, cpuAddr, ppu->oamAddr, numBytes);*/
     memcpy(&ppu->oam[ppu->oamAddr], &state->memory[cpuAddr], numBytes);
     /*dumpOam(1, ppu->oam);*/
-    /*ypos: 7f, tileindex: a2, attr: 00, xpos: 38*/
   } else if (memoryAddress == 0x4016) {
     /*print("************ write to 0x4016: %02x\n", value);*/
     state->pollController = (value == 1);
@@ -393,12 +389,14 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
 unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride) {
   if (memoryAddress == 0x2002) {
     struct PPU *ppu = state->ppuClosure->ppu;
-    /*print("clearing vblank due to reading 0x2002\n");*/
-    ppu->status = ppu->status ^ 0x80; // clear vblank flag
+    uint8_t status = ppu->status;  // copy the status out so we can return it as it was before clearing flags
+
+    ppu->status = ppu->status & ~0x80;  // clear vblank flag
     ppu->ppuAddrGateLow = 0;
     ppu->ppuAddrGateHigh = 0;
     *shouldOverride = true;
-    return ppu->status; 
+
+    return status; 
   } else if (memoryAddress == 0x2007) {
     struct PPU *ppu = state->ppuClosure->ppu;
     /*print("READING 0x2007 *************************\n\n");*/
@@ -471,9 +469,12 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
       }
     }
   } else if (ppu->scanline == -1) {
+    // pre-render line
+
     if (ppu->scanlineClockCycle == 1) {
       /*print("VBLANK END\n");*/
-      ppu->status = ppu->status ^ 0x80; // clear vblank flag
+      ppu->status = ppu->status & ~0x80; // clear vblank flag
+      ppu->status = ppu->status & ~0x40; // clear sprite 0 hit flag
     }
   }
 
@@ -484,7 +485,6 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
     ppu->scanline++;
     ppu->scanlineClockCycle = 0;
     if (ppu->scanline == 261) {
-      /*print("done all scanlines\n");*/
       ppu->scanline = -1;
     }
   }
@@ -504,7 +504,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   unsigned char header[16];
   FILE *file;
 
-  file = fopen("donkey_kong.nes", "rb");
+  /*file = fopen("donkey_kong.nes", "rb");*/
+  file = fopen("Excitebike.nes", "rb");
 
   fread(header, sizeof(header), 1, file);
 
@@ -631,7 +632,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       WS_OVERLAPPEDWINDOW,            // Window style
 
       // Size and position
-      CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+      CW_USEDEFAULT, CW_USEDEFAULT, VIDEO_BUFFER_WIDTH*4, VIDEO_BUFFER_HEIGHT*4,
 
       NULL,       // Parent window    
       NULL,       // Menu
@@ -732,21 +733,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     int cycles = executeInstruction(instr, &state);
 
-    /*
-    if (state.pc == 0xF4AC) {
-      print("$34: %02x, $44: %02x, $58: %02x\n", state.memory[0x34], state.memory[0x44], state.memory[0x58]);
-    }
-    */
-
-    /*print("$44: %02x, $58: %02x\n", state.memory[0x44], state.memory[0x58]);*/
-    /*print("PPU: Scanline %d; Scanline Cycle: %d; VRAM Addr: %04x\n", ppu.scanline, ppu.scanlineClockCycle, ppu.ppuAddr);*/
-
     for (int i = 0; i < cycles*3; i++) {
       ppuTick(&ppu, &state);
     }
-
-    /*print(str, "(instr %d): PPU registers: %02x %02x %02x %02x %02x %02x %02x %02x\n", instructionsExecuted, state.memory[0x2000], state.memory[0x2001], state.memory[0x2002], state.memory[0x2003], state.memory[0x2004], state.memory[0x2005], state.memory[0x2006], state.memory[0x2007]);*/
-    /*print("\n");*/
 
     /*
     if (instructionsExecuted == 18000) {
