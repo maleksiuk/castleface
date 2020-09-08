@@ -101,6 +101,24 @@ void dumpNametable(int num, const struct PPU *ppu)
   fclose(file);
 }
 
+void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) {
+  HDC deviceContext = GetDC(windowHandle);
+
+  RECT clientRect;
+  GetClientRect(windowHandle, &clientRect);
+  int windowWidth = clientRect.right - clientRect.left;
+  int windowHeight = clientRect.bottom - clientRect.top;
+
+  StretchDIBits(deviceContext,
+      0, 0, windowWidth, windowHeight,
+      0, 0, VIDEO_BUFFER_WIDTH, VIDEO_BUFFER_HEIGHT,
+      videoBuffer,
+      bitmapInfo,
+      DIB_RGB_COLORS, SRCCOPY);
+
+  ReleaseDC(windowHandle, deviceContext);
+}
+
     /*
      *
      * https://wiki.nesdev.com/w/index.php/PPU_memory_map
@@ -114,122 +132,6 @@ void renderToVideoBuffer(struct PPU *ppu, struct Color *palette)
 {
   unsigned char control = ppu->control;
 
-  /*
-  for (int paletteNumber = 0; paletteNumber < 4; paletteNumber++) {
-    print("palette number %d: ", paletteNumber);
-    for (int i = 0; i < 3; i++) {
-      int colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + i];
-      struct Color color = palette[colorIndex];
-      print("color%d: (index: %02x, color: %d %d %d) - ", i, colorIndex, color.red, color.green, color.blue);
-    }
-    print("\n");
-  }
-  */
-
-  uint8_t universalBackgroundColor = ppu->memory[0x3F00];
-
-  // 0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00
-  unsigned char baseNametableAddressCode = (control & 0x02) | (control & 0x01);
-  int baseNametableAddress = 0x2000 + 0x0400 * baseNametableAddressCode;
-
-  // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
-  int attributeTableAddress = baseNametableAddress + 960;
-  
-  // 0: $0000; 1: $1000
-  unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
-  int backgroundPatternTableAddress = 0x1000 * backgroundPatternTableAddressCode;
-
-  int tileRow = 0;
-  int tileCol = 0;
-  int tileColPixel = 0;
-
-  // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes
-  int nametableByteIndex = 0;
-  for (nametableByteIndex = 0; nametableByteIndex < 0x3C0; nametableByteIndex += 1) {
-    tileRow = nametableByteIndex / 32;
-    tileCol = nametableByteIndex % 32;
-
-    // want to find byte in attributeTable for tileRow, tileCol
-    int attributeBlockRow = tileRow / 4;  // 0 to 7
-    int attributeBlockCol = tileCol / 4;  // 0 to 7
-    uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
-
-    // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
-    int quadrantX = (tileCol - attributeBlockCol*4) / 2;
-    int quadrantY = (tileRow - attributeBlockRow*4) / 2;
-    int quadrantNumber = quadrantY << 1 | quadrantX;
-
-    // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
-    int paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
-
-    /*
-    int x = 9;
-    int y = 7;
-    if (tileCol == x && tileRow == y) {
-      print("tile (%d, %d): attribute data: %02x, palette number %d. attribRow: %d, attribCol: %d\n", x, y, attributeByte, paletteNumber, attributeBlockRow, attributeBlockCol);
-    }
-    */
-
-    /*print("tileRow: %d, tileCol: %d, palette Number %d\n", tileRow, tileCol, paletteNumber);*/
-
-    int address = baseNametableAddress + tileRow*32 + tileCol;
-
-    // val is an índex into the background pattern table
-    unsigned char val = ppu->memory[address];
-
-    // 16 because the pattern table comes in 16 byte chunks 
-    int addressOfBackgroundTile = backgroundPatternTableAddress + (val * 16);
-
-    int tileRowPixel = tileRow * 8;
-    tileColPixel = tileCol * 8;
-
-    /*print("(row: %d, col: %d) - about to render background tile. Index into bg pattern table: %x\n", tileRow, tileCol, val);*/
-
-    // iterate through each pixel in the 8x8 tile 
-    for (int row = 0; row < 8; row++) {
-      for (int col = 0; col < 8; col++) {
-        int bit = 7 - col;
-
-        unsigned char bit1 = (ppu->memory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
-        unsigned char bit0 = (ppu->memory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
-
-        uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
-        videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
-
-        // videoBuffer is 256 x 240 
-
-        uint32_t *pixel = (uint32_t *)(videoBufferRow);
-        pixel += (tileColPixel + col);
-
-        int val = bit1 << 1 | bit0;
-
-/*$3F00 	Universal background color*/
-/*$3F01-$3F03 	Background palette 0*/
-/*$3F05-$3F07 	Background palette 1*/
-/*$3F09-$3F0B 	Background palette 2*/
-/*$3F0D-$3F0F 	Background palette 3 */
-        uint8_t colorIndex = universalBackgroundColor;
-        if (val > 0) {
-          colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
-        }
-        struct Color color = palette[colorIndex];
-
-        /*
-        if (tileRow == 4 && tileCol == 9) {
-          print("tile: (%d, %d), attr block: (%d, %d), quad #: %d, palette #: %d, val is %d, so color index is %d. RGB: %d %d %d\n", row, col, attributeBlockRow, attributeBlockCol, quadrantNumber, paletteNumber, val, colorIndex, color.red, color.green, color.blue);
-        }
-        */
-
-        *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
-      }
-    }
-
-    /*
-       char str[500];
-       sprintf(str, "nametableByteIndex: %d; tileRow %d, tileCol %d -- %x: %02x; address of background tile: %x\n", nametableByteIndex, tileRow, tileCol, address, val, addressOfBackgroundTile);
-       OutputDebugString(str);
-       */
-  }
 
   // play around with sprite rendering
   {
@@ -457,7 +359,7 @@ might be good to print out stuff just between $f4ac and f4c1, showing all the me
 
    */
 
-void ppuTick(struct PPU *ppu, struct Computer *state)
+void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
 {
   /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   if (ppu->scanline >= 241) {  // vblank
@@ -476,6 +378,105 @@ void ppuTick(struct PPU *ppu, struct Computer *state)
       ppu->status = ppu->status & ~0x80; // clear vblank flag
       ppu->status = ppu->status & ~0x40; // clear sprite 0 hit flag
     }
+  } else if (ppu->scanline >= 0 && ppu->scanline <= 239) {
+    // visible scanlines
+
+    if (ppu->scanlineClockCycle >= 0 && ppu->scanlineClockCycle <= 255) {
+      unsigned char control = ppu->control;
+      uint8_t universalBackgroundColor = ppu->memory[0x3F00];
+
+      // 0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00
+      unsigned char baseNametableAddressCode = (control & 0x02) | (control & 0x01);
+      int baseNametableAddress = 0x2000 + 0x0400 * baseNametableAddressCode;
+
+      // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
+      int attributeTableAddress = baseNametableAddress + 960;
+
+      // 0: $0000; 1: $1000
+      unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
+      int backgroundPatternTableAddress = 0x1000 * backgroundPatternTableAddressCode;
+
+      // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes. Each tile is 8x8 pixels.
+      int tileRow = ppu->scanline / 8;
+      int tileCol = ppu->scanlineClockCycle / 8;
+
+      /*print("(%d, %d) working on tile at row, col: %d, %d\n", ppu->scanline, ppu->scanlineClockCycle, tileRow, tileCol);*/
+
+      // want to find byte in attributeTable for tileRow, tileCol
+      int attributeBlockRow = tileRow / 4;  // 0 to 7
+      int attributeBlockCol = tileCol / 4;  // 0 to 7
+      uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
+
+      // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
+      int quadrantX = (tileCol - attributeBlockCol*4) / 2;
+      int quadrantY = (tileRow - attributeBlockRow*4) / 2;
+      int quadrantNumber = quadrantY << 1 | quadrantX;
+
+      // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
+      int paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
+
+      int address = baseNametableAddress + tileRow*32 + tileCol;
+
+      // val is an índex into the background pattern table
+      unsigned char val = ppu->memory[address];
+
+      // 16 because the pattern table comes in 16 byte chunks 
+      int addressOfBackgroundTile = backgroundPatternTableAddress + (val * 16);
+
+      // TODO: right now these are the start of the background tile.
+      int tileRowPixel = tileRow * 8;
+      int tileColPixel = tileCol * 8;
+
+      // I need to figure out, based on our scanline and scanline clock cycle, which
+      // pixel within the tile we need to render.
+
+      // for example, to find the col...
+      // let's say we're at pixel 183 on the row
+      // so that is tile 183/8 (=22) on the row
+      // 22*8 = 176, so the pixel should be 7
+      // which is also 183%22?
+      // but is definitely (183 - (22*8))
+
+      int row = ppu->scanline - tileRowPixel;
+      int col = ppu->scanlineClockCycle - tileColPixel;
+
+
+      // iterate through each pixel in the 8x8 tile 
+      /*for (int row = 0; row < 8; row++) {*/
+        /*for (int col = 0; col < 8; col++) {*/
+          int bit = 7 - col;
+
+          unsigned char bit1 = (ppu->memory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
+          unsigned char bit0 = (ppu->memory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
+
+          uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
+          videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
+
+          // videoBuffer is 256 x 240 
+
+          uint32_t *pixel = (uint32_t *)(videoBufferRow);
+          pixel += (tileColPixel + col);
+
+          // TODO: rename someOtherVal
+          int someOtherVal = bit1 << 1 | bit0;
+
+          /*$3F00 	Universal background color*/
+          /*$3F01-$3F03 	Background palette 0*/
+          /*$3F05-$3F07 	Background palette 1*/
+          /*$3F09-$3F0B 	Background palette 2*/
+          /*$3F0D-$3F0F 	Background palette 3 */
+          uint8_t colorIndex = universalBackgroundColor;
+          if (someOtherVal > 0) {
+            colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + someOtherVal - 1];
+          }
+          struct Color color = palette[colorIndex];
+
+          *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
+        /*}*/
+      /*}*/
+
+    } // end of conditional for visible clock cycle
+
   }
 
   // TODO: move actual rendering here. Honour the mask flags.
@@ -501,11 +502,15 @@ void setKeyboardInput(bool *buttonValue, bool wasDown, bool isDown) {
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
+  LARGE_INTEGER perfFrequencyResult;
+  QueryPerformanceFrequency(&perfFrequencyResult);
+  int64_t perfFrequency = perfFrequencyResult.QuadPart;
+
   unsigned char header[16];
   FILE *file;
 
-  /*file = fopen("donkey_kong.nes", "rb");*/
-  file = fopen("Excitebike.nes", "rb");
+  file = fopen("donkey_kong.nes", "rb");
+  /*file = fopen("Excitebike.nes", "rb");*/
 
   fread(header, sizeof(header), 1, file);
 
@@ -625,6 +630,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   RegisterClassA(&wc);
 
   // Create the window.
+  // TODO: I might have to account for the title bar when setting the window height.
   HWND windowHandle = CreateWindowExA(
       0,                              // Optional window styles.
       CLASS_NAME,                     // Window class
@@ -672,6 +678,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   // instr 11127: sets 2006 to c0
   // instr 11130: sets 2007 back to 00 (finishes setting it to 24 around here)
   // instr 11334: sets 2000 to 90 (10010000)
+
+  LARGE_INTEGER lastPerfCount;
+  QueryPerformanceCounter(&lastPerfCount);
 
   while(running && state.pc < 0xFFFF)
   {
@@ -723,47 +732,34 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       renderToVideoBuffer(&ppu, palette);
     }
 
-  // Donkey Kong is setting 2000 (first ppu reg) to 00010000, indicating that the background table address is $1000 (in the CHR ROM I believe)
-  //    https://wiki.nesdev.com/w/index.php/PPU_pattern_tables
-  //    https://wiki.nesdev.com/w/index.php/PPU_registers#Controller_.28.242000.29_.3E_write
-
-  // Donkey Kong is waiting for 2002 to have the 7th bit set (i.e. "vertical blank has started")
+    uint8_t ppuStatusBefore = ppu.status;
 
     instr = state.memory[state.pc];
-
     int cycles = executeInstruction(instr, &state);
 
     for (int i = 0; i < cycles*3; i++) {
-      ppuTick(&ppu, &state);
+      ppuTick(&ppu, &state, palette);
     }
 
-    /*
-    if (instructionsExecuted == 18000) {
-      dumpNametable(0, &ppu);
-    }
-    */
+    uint8_t ppuStatusAfter = ppu.status;
 
     instructionsExecuted++;
+    loopCount++;
 
-    if (loopCount % 500 == 0) {
-      HDC deviceContext = GetDC(windowHandle);
+    LARGE_INTEGER endPerfCount;
+    QueryPerformanceCounter(&endPerfCount);
 
-      RECT clientRect;
-      GetClientRect(windowHandle, &clientRect);
-      int windowWidth = clientRect.right - clientRect.left;
-      int windowHeight = clientRect.bottom - clientRect.top;
+    // if vblank has started
+    if ((ppuStatusBefore & 0x80) == 0 && (ppuStatusAfter & 0x80) == 0x80) {
+      displayFrame(videoBuffer, windowHandle, &bitmapInfo);
 
-      StretchDIBits(deviceContext,
-          0, 0, windowWidth, windowHeight,
-          0, 0, VIDEO_BUFFER_WIDTH, VIDEO_BUFFER_HEIGHT,
-          videoBuffer,
-          &bitmapInfo,
-          DIB_RGB_COLORS, SRCCOPY);
-
-      ReleaseDC(windowHandle, deviceContext);
+      int64_t perfCount = endPerfCount.QuadPart - lastPerfCount.QuadPart;
+      double milliseconds = (1000.0f*(double)perfCount) / (double)perfFrequency;
+      double framesPerSecond = (double)perfFrequency / (double)perfCount;
+      print("# of milliseconds for frame: %f\nframes per second: %f\n", milliseconds, framesPerSecond);
     }
 
-    loopCount++;
+    lastPerfCount = endPerfCount;
   }
 
   free(videoBuffer);
