@@ -330,34 +330,84 @@ int vramIncrement(struct PPU *ppu) {
   }
 }
 
-/*
-   looking at mesen, it's cycling on c7e1 and c7e4 (with a subroutine at f4ed happening as part of it).
-    - is this a main game loop of sorts?
+void renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color *palette) {
+  unsigned char control = ppu->control;
+  uint8_t universalBackgroundColor = ppu->memory[0x3F00];
 
-    - used a disassembled donkey kong to learn some stuff
+  // 0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00
+  unsigned char baseNametableAddressCode = (control & 0x02) | (control & 0x01);
+  int baseNametableAddress = 0x2000 + 0x0400 * baseNametableAddressCode;
 
-    - $0044 holds a timer that controls the flipping between the menu and demo screens
-    - $0058 is 1 if in demo mode
-    - F4BC decrements the timer
+  // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
+  int attributeTableAddress = baseNametableAddress + 960;
 
-;Timer not expired - leave
-C953 : D0 07		bne	$C95C		;
-;Timer expired - activate demo mode
-C955 : A9 01		lda	#$01		; 
-C957 : 85 58		sta	$58		;	
-C959 : 4C B1 C9		jmp	$C9B1		; Prepare demo
-C95C : 60			rts			;
+  // 0: $0000; 1: $1000
+  unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
+  int backgroundPatternTableAddress = 0x1000 * backgroundPatternTableAddressCode;
 
+  // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes. Each tile is 8x8 pixels.
+  int tileRow = ppu->scanline / 8;
+  int tileCol = ppu->scanlineClockCycle / 8;
 
-my game is looping on $C940 which is good as that's the intro screen handling code
+  /*print("(%d, %d) working on tile at row, col: %d, %d\n", ppu->scanline, ppu->scanlineClockCycle, tileRow, tileCol);*/
 
-for some reason the disassembled one's program mem addresses aren't always the same as mine :(
-for me the decrement program counters subroutine is at $f4ac and theirs is at F4BB
-maybe they used a slightly different rom? mine match up to what mesen shows.
+  // want to find byte in attributeTable for tileRow, tileCol
+  int attributeBlockRow = tileRow / 4;  // 0 to 7
+  int attributeBlockCol = tileCol / 4;  // 0 to 7
+  uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
 
-might be good to print out stuff just between $f4ac and f4c1, showing all the memory that is being decremented
+  // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
+  int quadrantX = (tileCol - attributeBlockCol*4) / 2;
+  int quadrantY = (tileRow - attributeBlockRow*4) / 2;
+  int quadrantNumber = quadrantY << 1 | quadrantX;
 
-   */
+  // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
+  int paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
+
+  int address = baseNametableAddress + tileRow*32 + tileCol;
+
+  // val is an índex into the background pattern table
+  unsigned char val = ppu->memory[address];
+
+  // 16 because the pattern table comes in 16 byte chunks 
+  int addressOfBackgroundTile = backgroundPatternTableAddress + (val * 16);
+
+  // TODO: right now these are the start of the background tile.
+  int tileRowPixel = tileRow * 8;
+  int tileColPixel = tileCol * 8;
+
+  int row = ppu->scanline - tileRowPixel;
+  int col = ppu->scanlineClockCycle - tileColPixel;
+
+  {
+    int bit = 7 - col;
+
+    unsigned char bit1 = (ppu->memory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
+    unsigned char bit0 = (ppu->memory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
+
+    uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
+    videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
+
+    uint32_t *pixel = (uint32_t *)(videoBufferRow);
+    pixel += (tileColPixel + col);
+
+    // TODO: rename someOtherVal
+    int someOtherVal = bit1 << 1 | bit0;
+
+    /*$3F00 	Universal background color*/
+    /*$3F01-$3F03 	Background palette 0*/
+    /*$3F05-$3F07 	Background palette 1*/
+    /*$3F09-$3F0B 	Background palette 2*/
+    /*$3F0D-$3F0F 	Background palette 3 */
+    uint8_t colorIndex = universalBackgroundColor;
+    if (someOtherVal > 0) {
+      colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + someOtherVal - 1];
+    }
+    struct Color color = palette[colorIndex];
+
+    *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
+  }
+}
 
 void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
 {
@@ -382,99 +432,7 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
     // visible scanlines
 
     if (ppu->scanlineClockCycle >= 0 && ppu->scanlineClockCycle <= 255) {
-      unsigned char control = ppu->control;
-      uint8_t universalBackgroundColor = ppu->memory[0x3F00];
-
-      // 0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00
-      unsigned char baseNametableAddressCode = (control & 0x02) | (control & 0x01);
-      int baseNametableAddress = 0x2000 + 0x0400 * baseNametableAddressCode;
-
-      // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
-      int attributeTableAddress = baseNametableAddress + 960;
-
-      // 0: $0000; 1: $1000
-      unsigned char backgroundPatternTableAddressCode = (control & 0x10) >> 4;
-      int backgroundPatternTableAddress = 0x1000 * backgroundPatternTableAddressCode;
-
-      // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes. Each tile is 8x8 pixels.
-      int tileRow = ppu->scanline / 8;
-      int tileCol = ppu->scanlineClockCycle / 8;
-
-      /*print("(%d, %d) working on tile at row, col: %d, %d\n", ppu->scanline, ppu->scanlineClockCycle, tileRow, tileCol);*/
-
-      // want to find byte in attributeTable for tileRow, tileCol
-      int attributeBlockRow = tileRow / 4;  // 0 to 7
-      int attributeBlockCol = tileCol / 4;  // 0 to 7
-      uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
-
-      // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
-      int quadrantX = (tileCol - attributeBlockCol*4) / 2;
-      int quadrantY = (tileRow - attributeBlockRow*4) / 2;
-      int quadrantNumber = quadrantY << 1 | quadrantX;
-
-      // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
-      int paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
-
-      int address = baseNametableAddress + tileRow*32 + tileCol;
-
-      // val is an índex into the background pattern table
-      unsigned char val = ppu->memory[address];
-
-      // 16 because the pattern table comes in 16 byte chunks 
-      int addressOfBackgroundTile = backgroundPatternTableAddress + (val * 16);
-
-      // TODO: right now these are the start of the background tile.
-      int tileRowPixel = tileRow * 8;
-      int tileColPixel = tileCol * 8;
-
-      // I need to figure out, based on our scanline and scanline clock cycle, which
-      // pixel within the tile we need to render.
-
-      // for example, to find the col...
-      // let's say we're at pixel 183 on the row
-      // so that is tile 183/8 (=22) on the row
-      // 22*8 = 176, so the pixel should be 7
-      // which is also 183%22?
-      // but is definitely (183 - (22*8))
-
-      int row = ppu->scanline - tileRowPixel;
-      int col = ppu->scanlineClockCycle - tileColPixel;
-
-
-      // iterate through each pixel in the 8x8 tile 
-      /*for (int row = 0; row < 8; row++) {*/
-        /*for (int col = 0; col < 8; col++) {*/
-          int bit = 7 - col;
-
-          unsigned char bit1 = (ppu->memory[addressOfBackgroundTile+8+row] >> bit & 0x01) != 0;
-          unsigned char bit0 = (ppu->memory[addressOfBackgroundTile+row] >> bit & 0x01) != 0;
-
-          uint8_t *videoBufferRow = (uint8_t *)videoBuffer;
-          videoBufferRow = videoBufferRow + ((tileRowPixel + row) * VIDEO_BUFFER_WIDTH * 4);
-
-          // videoBuffer is 256 x 240 
-
-          uint32_t *pixel = (uint32_t *)(videoBufferRow);
-          pixel += (tileColPixel + col);
-
-          // TODO: rename someOtherVal
-          int someOtherVal = bit1 << 1 | bit0;
-
-          /*$3F00 	Universal background color*/
-          /*$3F01-$3F03 	Background palette 0*/
-          /*$3F05-$3F07 	Background palette 1*/
-          /*$3F09-$3F0B 	Background palette 2*/
-          /*$3F0D-$3F0F 	Background palette 3 */
-          uint8_t colorIndex = universalBackgroundColor;
-          if (someOtherVal > 0) {
-            colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + someOtherVal - 1];
-          }
-          struct Color color = palette[colorIndex];
-
-          *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
-        /*}*/
-      /*}*/
-
+      renderBackgroundPixel(ppu, state, palette);
     } // end of conditional for visible clock cycle
 
   }
@@ -505,6 +463,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   LARGE_INTEGER perfFrequencyResult;
   QueryPerformanceFrequency(&perfFrequencyResult);
   int64_t perfFrequency = perfFrequencyResult.QuadPart;
+
+  // TODO: check return value to see if it worked
+  timeBeginPeriod(1);
 
   unsigned char header[16];
   FILE *file;
@@ -667,18 +628,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   int instructionsExecuted = 0;
   unsigned char instr = 0;
 
-  // what I'm seeing Donkey Kong do:
-  //
-  // instr 6169: finishes setting a ton of memory to 0
-  // instr 6179: sets 2001 to 06
-  // instr 8037: sets 2006 to 20
-  // instr 8039: sets 2006 to 00 (so sets ppu address to $2000)
-  // instr 8044: starts setting 2007 to 24 repeatedly to fill the nametable
-  // instr 11125: sets 2006 to 23
-  // instr 11127: sets 2006 to c0
-  // instr 11130: sets 2007 back to 00 (finishes setting it to 24 around here)
-  // instr 11334: sets 2000 to 90 (10010000)
-
   LARGE_INTEGER lastPerfCount;
   QueryPerformanceCounter(&lastPerfCount);
 
@@ -746,20 +695,35 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     instructionsExecuted++;
     loopCount++;
 
-    LARGE_INTEGER endPerfCount;
-    QueryPerformanceCounter(&endPerfCount);
-
     // if vblank has started
     if ((ppuStatusBefore & 0x80) == 0 && (ppuStatusAfter & 0x80) == 0x80) {
+      LARGE_INTEGER midPerfCount;
+      QueryPerformanceCounter(&midPerfCount);
+      int64_t midPerfDiff = midPerfCount.QuadPart - lastPerfCount.QuadPart;
+      double millisecondsElapsed = (1000.0f*(double)midPerfDiff) / (double)perfFrequency;
+
+      if (millisecondsElapsed < 16) {
+        DWORD sleepTime = (16 - (DWORD)millisecondsElapsed);
+        print("sleep for %d milliseconds\n", sleepTime);
+        Sleep(sleepTime);
+
+        // TODO: Consider adding what Casey does in Handmade Hero: a loop to kill time if the sleep isn't
+        // granular enough. I think he also runs that loop if the sleep didn't sleep long enough, although
+        // that seems like an unlikely scenario to me.
+      }
+
       displayFrame(videoBuffer, windowHandle, &bitmapInfo);
 
+      LARGE_INTEGER endPerfCount;
+      QueryPerformanceCounter(&endPerfCount);
       int64_t perfCount = endPerfCount.QuadPart - lastPerfCount.QuadPart;
       double milliseconds = (1000.0f*(double)perfCount) / (double)perfFrequency;
       double framesPerSecond = (double)perfFrequency / (double)perfCount;
       print("# of milliseconds for frame: %f\nframes per second: %f\n", milliseconds, framesPerSecond);
+
+      lastPerfCount = endPerfCount;
     }
 
-    lastPerfCount = endPerfCount;
   }
 
   free(videoBuffer);
@@ -768,6 +732,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   free(oam);
   free(prgRom);
   free(chrRom);
+  timeEndPeriod(1);
   return 0;
 }
 
