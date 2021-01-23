@@ -19,6 +19,16 @@
 // - https://www.reddit.com/r/EmuDev/comments/7k08b9/not_sure_where_to_start_with_the_nes_ppu/drapgie/
 // - https://www.dustmop.io/blog/2015/12/18/nes-graphics-part-3/
 // - http://www.michaelburge.us/2019/03/18/nes-design.html#ppu
+//
+     /*
+     *
+     * https://wiki.nesdev.com/w/index.php/PPU_memory_map
+     *
+     * This seems helpful: http://forums.nesdev.com/viewtopic.php?f=3&t=18656
+     *
+     */
+
+// super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
 
 // - got the kingswood assembler from http://web.archive.org/web/20190301123637/http://www.kingswood-consulting.co.uk/assemblers/
 //   (but then learned that it also comes with the Klaus functional tests)
@@ -117,95 +127,6 @@ void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) 
       DIB_RGB_COLORS, SRCCOPY);
 
   ReleaseDC(windowHandle, deviceContext);
-}
-
-    /*
-     *
-     * https://wiki.nesdev.com/w/index.php/PPU_memory_map
-     *
-     * This seems helpful: http://forums.nesdev.com/viewtopic.php?f=3&t=18656
-     *
-     */
-
-// super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
-// TODO: Move sprite rendering into ppuTick and then delete this function.
-void renderToVideoBuffer(struct PPU *ppu, struct Color *palette) 
-{
-  unsigned char control = ppu->control;
-
-
-  // play around with sprite rendering
-  {
-
-    int spritePatternTableAddress = 0x0000;
-    if (control >> 3 == 1) {
-      spritePatternTableAddress = 0x1000;
-    }
-
-    for (int i = 0; i < 256; i+=4) {
-      uint8_t ypos = ppu->oam[i];
-      uint8_t tileIndex = ppu->oam[i+1];
-      uint8_t attributes = ppu->oam[i+2];
-      uint8_t xpos = ppu->oam[i+3];
-
-      /*print("i: %d, sprite xpos: %d, ypos: %d, tileIndex: %d\n", i, xpos, ypos, tileIndex);*/
-
-      // TODO: find docs on this. I'm seeing tons of ypos FF and xpos 0 sprites which I guess are 'empty'?
-      // I think the docs are here: 'hide a sprite...' https://wiki.nesdev.com/w/index.php/PPU_OAM
-      if (ypos > 240-8) {
-        continue;
-      }
-
-      bool flipHorizontally = attributes & 0x40;
-
-      // 16 because the pattern table comes in 16 byte chunks 
-      int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
-      unsigned char *sprite = &ppu->memory[addressOfSprite];
-
-      uint32_t *videoBufferRow = (uint32_t *)videoBuffer;
-      videoBufferRow += (ypos * VIDEO_BUFFER_WIDTH) + xpos;
-
-      // 8x8 sprite
-      for (int row = 0; row < 8; row++) {
-        uint8_t lowByte = sprite[row];
-        uint8_t highByte = sprite[row+8];
-
-        videoBufferRow += VIDEO_BUFFER_WIDTH;
-        uint32_t *pixel = videoBufferRow;
-        int pixelIncrement = 1;
-
-        if (flipHorizontally) {
-          *pixel += 8;
-          pixelIncrement = -1;
-        }
-
-        for (int col = 0; col < 8; col++) {
-          int bitNumber = 7 - col;
-          uint8_t bit1 = (highByte >> bitNumber) & 0x01;
-          uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
-          int val = bit1 << 1 | bit0;
-
-          uint8_t red = 0;
-          uint8_t green = 0;
-          uint8_t blue = 0;
-          if (val == 0) {
-          } else if (val == 1) {
-            blue = 0xFF;
-          } else if (val == 2) {
-            green = 0xFF;
-          } else if (val == 3) {
-            red = 0xFF;
-          }
-
-          *pixel = ((red << 16) | (green << 8) | blue);
-
-          pixel += pixelIncrement;
-        }
-      }
-
-    }
-
-  }
 }
 
 // upper byte gets written first, then lower byte
@@ -331,6 +252,90 @@ int vramIncrement(struct PPU *ppu) {
   }
 }
 
+void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *palette) {
+  unsigned char control = ppu->control;
+
+  int spritePatternTableAddress = 0x0000;
+  if (control >> 3 == 1) {
+    spritePatternTableAddress = 0x1000;
+  }
+
+  // find which pixel we're working on, see if that matches a sprite, and then figure out what to render there if it does.
+
+  int pixelX = ppu->scanlineClockCycle;
+  int pixelY = ppu->scanline;
+
+  // search through the 64 sprites to see if any affect us
+  for (int i = 0; i < 256; i+=4) {
+    uint8_t ypos = ppu->oam[i];
+    uint8_t xpos = ppu->oam[i+3];
+
+    // TODO: find docs on this. I'm seeing tons of ypos FF and xpos 0 sprites which I guess are 'empty'?
+    // I think the docs are here: 'hide a sprite...' https://wiki.nesdev.com/w/index.php/PPU_OAM
+    if (ypos > 240-8) {
+      continue;
+    }
+
+    uint8_t xStart = xpos;
+    uint8_t xEnd = xpos + 8;
+    uint8_t yStart = ypos;
+    uint8_t yEnd = ypos + 8;
+
+    if (xStart <= pixelX && pixelX < xEnd && yStart <= pixelY && pixelY < yEnd) {
+      // render pixel at pixelX, pixelY
+      uint8_t tileIndex = ppu->oam[i+1];
+      uint8_t attributes = ppu->oam[i+2];
+
+      bool flipHorizontally = attributes & 0x40;
+
+      // 16 because the pattern table comes in 16 byte chunks 
+      int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
+      uint8_t *sprite = &ppu->memory[addressOfSprite];
+
+      uint32_t *videoBufferRow = (uint32_t *)videoBuffer;
+      videoBufferRow += (pixelY * VIDEO_BUFFER_WIDTH) + pixelX;
+
+      {
+        // find out which row of the 8x8 sprite is relevant for us
+        int rowOfSprite = pixelY - ypos;
+
+        uint8_t lowByte = sprite[rowOfSprite];
+        uint8_t highByte = sprite[rowOfSprite+8];
+
+        uint32_t *pixel = videoBufferRow;
+
+        int pixelIncrement = 1;
+
+        int colOfSprite = pixelX - xpos;
+        if (flipHorizontally) {
+          colOfSprite = 7 - colOfSprite;
+        }
+
+        int bitNumber = 7 - colOfSprite;
+        uint8_t bit1 = (highByte >> bitNumber) & 0x01;
+        uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
+        int val = bit1 << 1 | bit0;
+
+        uint8_t red = 0;
+        uint8_t green = 0;
+        uint8_t blue = 0;
+        if (val == 0) {
+        } else if (val == 1) {
+          blue = 0xFF;
+        } else if (val == 2) {
+          green = 0xFF;
+        } else if (val == 3) {
+          red = 0xFF;
+        }
+
+        *pixel = ((red << 16) | (green << 8) | blue);
+      }
+      
+    }
+  }
+
+}
+
 void renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color *palette) {
   unsigned char control = ppu->control;
   uint8_t universalBackgroundColor = ppu->memory[0x3F00];
@@ -434,11 +439,9 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
 
     if (ppu->scanlineClockCycle >= 0 && ppu->scanlineClockCycle <= 255) {
       renderBackgroundPixel(ppu, state, palette);
+      renderSpritePixel(ppu, state, palette);
     } // end of conditional for visible clock cycle
-
   }
-
-  // TODO: move actual rendering here. Honour the mask flags.
 
   ppu->scanlineClockCycle++;
   if (ppu->scanlineClockCycle == 341) {
@@ -515,7 +518,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   int mapperNumber = header[7] << 8 | header[6];
   print("mapper number: %d\n", mapperNumber);
 
-  // TODO: check return value of malloc
+  // TODO: check return value of mallocs and callocs
   unsigned char *memory;
   memory = (unsigned char *) malloc(0xFFFF);
 
@@ -673,12 +676,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
-    }
-
-    // just temporarily slow its roll; this whole render bit will go away soon
-    if (loopCount % 500 == 0) {
-      /*print("render to video buffer\n");*/
-      renderToVideoBuffer(&ppu, palette);
     }
 
     // TODO: we could move the instruction execution and ppuTick into a game layer. It could tell us
