@@ -30,7 +30,7 @@ int running = 1;
 #define VIDEO_BUFFER_WIDTH 256
 #define VIDEO_BUFFER_HEIGHT 240
 
-void *videoBuffer; // TODO: make this uint32_t?
+void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
 
 struct Color 
@@ -128,6 +128,7 @@ void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) 
      */
 
 // super helpful: https://austinmorlan.com/posts/nes_rendering_overview/#nametable
+// TODO: Move sprite rendering into ppuTick and then delete this function.
 void renderToVideoBuffer(struct PPU *ppu, struct Color *palette) 
 {
   unsigned char control = ppu->control;
@@ -482,37 +483,37 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   print("Size of CHR ROM in 8 KB units (Value 0 means the board uses CHR RAM): %d (and in bytes: %d)\n", header[5], sizeOfChrRomInBytes);
 
   if ((header[7]&0x0C)==0x08) {
-    printf("NES 2.0 format\n");
+    print("NES 2.0 format\n");
   } else {
-    printf("Not NES 2.0 format\n");
+    print("Not NES 2.0 format\n");
   }
 
   if ((header[6] & 0x01) == 0x01) {
-    printf("Vertical mirroring\n");
+    print("Vertical mirroring\n");
   } else {
-    printf("Horizontal mirroring\n");
+    print("Horizontal mirroring\n");
   }
 
   if ((header[6] & 2) == 2) {
-    printf("Cartridge contains battery-backed PRG RAM ($6000-7FFF) or other persistent memory\n");
+    print("Cartridge contains battery-backed PRG RAM ($6000-7FFF) or other persistent memory\n");
   } else {
-    printf("Cartridge does not contain battery-packed PRG RAM\n");
+    print("Cartridge does not contain battery-packed PRG RAM\n");
   }
 
   if ((header[6] & 4) == 4) {
-    printf("512-byte trainer at $7000-$71FF (stored before PRG data)\n");
+    print("512-byte trainer at $7000-$71FF (stored before PRG data)\n");
   } else {
-    printf("No 512-byte trainer at $7000-$71FF (stored before PRG data)\n");
+    print("No 512-byte trainer at $7000-$71FF (stored before PRG data)\n");
   }
 
   if ((header[6] & 8) == 8) {
-    printf("Ignore mirroring control or above mirroring bit; instead provide four-screen VRAM\n");
+    print("Ignore mirroring control or above mirroring bit; instead provide four-screen VRAM\n");
   } else {
-    printf("Do not ignore mirroring control or above mirroring bit\n");
+    print("Do not ignore mirroring control or above mirroring bit\n");
   }
 
   int mapperNumber = header[7] << 8 | header[6];
-  printf("mapper number: %d\n", mapperNumber);
+  print("mapper number: %d\n", mapperNumber);
 
   // TODO: check return value of malloc
   unsigned char *memory;
@@ -528,7 +529,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   prgRom = (unsigned char *) malloc(sizeOfPrgRomInBytes);
   if (prgRom == 0) 
   {
-    printf("Could not allocate memory for prgRom.");
+    print("Could not allocate memory for prgRom.");
     // TODO: free the other memory I've allocated?
     return(0);
   }
@@ -537,11 +538,11 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   chrRom = (unsigned char *) malloc(sizeOfChrRomInBytes);
   if (chrRom == 0)
   {
-    printf("Could not allocate memory for chrRom.");
+    print("Could not allocate memory for chrRom.");
     return(0);
   }
 
-  printf("about to read into prgRom, num of bytes: %d\n", sizeOfPrgRomInBytes);
+  print("about to read into prgRom, num of bytes: %d\n", sizeOfPrgRomInBytes);
   fread(prgRom, sizeOfPrgRomInBytes, 1, file);
   fread(chrRom, sizeOfChrRomInBytes, 1, file);
   fclose(file);
@@ -607,8 +608,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       NULL        // Additional application data
       );
 
-  if (windowHandle == NULL)
-  {
+  if (windowHandle == NULL) {
     return 0;
   }
 
@@ -616,7 +616,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   uint32_t loopCount = 0;
 
-  printf("memory address to start is: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
+  print("memory address to start is: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
   int memoryAddressToStartAt = (memory[0xFFFD] << 8) | memory[0xFFFC];
 
   struct KeyboardInput keyboardInput = { .up = false  };
@@ -675,11 +675,14 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       DispatchMessageA(&msg);
     }
 
-    // just temporarily slow its roll
+    // just temporarily slow its roll; this whole render bit will go away soon
     if (loopCount % 500 == 0) {
       /*print("render to video buffer\n");*/
       renderToVideoBuffer(&ppu, palette);
     }
+
+    // TODO: we could move the instruction execution and ppuTick into a game layer. It could tell us
+    // when vblank has started so this platform layer can display the frame and sleep.
 
     uint8_t ppuStatusBefore = ppu.status;
 
