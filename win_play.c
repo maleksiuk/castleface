@@ -666,6 +666,15 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
           case 0x4C: // l 
             setKeyboardInput(&keyboardInput.a, wasDown, isDown);
             break;
+          case 0x33: // 3
+            dumpOam(1, ppu.oam);
+            break;
+          case 0x34: // 4
+            state.debuggingOn = true;
+            break;
+          case 0x35: // 5
+            state.debuggingOn = false;
+            break;
         }
       }
 

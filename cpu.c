@@ -241,19 +241,21 @@ int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, bo
 void printInstruction(unsigned char instr, int length, struct Computer *state)
 {
 #ifdef PRINT_INSTRUCTION
-  char str[500];
-  sprintf(str, "%02x", instr);
-  printf(str);
-  OutputDebugString(str);
-
-  for (int i = 1; i <= length; i++)
-  {
-    sprintf(str, " %02x", state->memory[state->pc + i]);
+  if (state->debuggingOn) {
+    char str[500];
+    sprintf(str, "%02x", instr);
     printf(str);
     OutputDebugString(str);
+
+    for (int i = 1; i <= length; i++)
+    {
+      sprintf(str, " %02x", state->memory[state->pc + i]);
+      printf(str);
+      OutputDebugString(str);
+    }
+    printf("\n");
+    OutputDebugString("\n");
   }
-  printf("\n");
-  OutputDebugString("\n");
 #endif
 }
 
@@ -292,8 +294,12 @@ char *addressingModeString(enum AddressingMode addressingMode)
   return "Unknown";
 }
 
-void printInstructionDescription(char *name, enum AddressingMode addressingMode, char *desc, ...)
+void printInstructionDescription(struct Computer *state, char *name, enum AddressingMode addressingMode, char *desc, ...)
 {
+  if (state->debuggingOn == false) {
+    return;
+  }
+
 #ifdef PRINT_INSTRUCTION_DESCRIPTION
 #ifdef PRINT_INSTRUCTION_DESCRIPTION_ONLY_MEMORY_WRITES
   if (strcmp(name, "STA") != 0 && strcmp(name, "STX") != 0 && strcmp(name, "STY") != 0)
@@ -339,7 +345,7 @@ int brk(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("BRK", addressingMode, "force interrupt");
+  printInstructionDescription(state, "BRK", addressingMode, "force interrupt");
 
   unsigned char lowNibble = (state->memory)[0xFFFE];
   unsigned char highNibble = (state->memory)[0xFFFF];
@@ -363,7 +369,7 @@ int rti(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("RTI", addressingMode, "return from interrupt");
+  printInstructionDescription(state, "RTI", addressingMode, "return from interrupt");
 
   /*state.interruptDisable = 0;*/
 
@@ -400,7 +406,7 @@ int lda(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("LDA", addressingMode, "set acc to value %02x", value);
+  printInstructionDescription(state, "LDA", addressingMode, "set acc to value %02x", value);
 
   setAcc(value, state);
   state->pc += (1 + length);
@@ -416,7 +422,7 @@ int ldx(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("LDX", addressingMode, "set x to value %02x", value);
+  printInstructionDescription(state, "LDX", addressingMode, "set x to value %02x", value);
 
   setX(value, state);
   state->pc += (1 + length);
@@ -432,7 +438,7 @@ int ldy(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("LDY", addressingMode, "set y to value %02x", value);
+  printInstructionDescription(state, "LDY", addressingMode, "set y to value %02x", value);
 
   setY(value, state);
   state->pc += (1 + length);
@@ -445,7 +451,7 @@ int sta(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("STA", addressingMode, "set memory address %04x to acc value %02x", memoryAddress, state->acc);
+  printInstructionDescription(state, "STA", addressingMode, "set memory address %04x to acc value %02x", memoryAddress, state->acc);
 
   writeMemory(memoryAddress, state->acc, state);
   state->pc += (1 + length);
@@ -458,7 +464,7 @@ int stx(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("STX", addressingMode, "set memory address %04x to x value %02x", memoryAddress, state->xRegister);
+  printInstructionDescription(state, "STX", addressingMode, "set memory address %04x to x value %02x", memoryAddress, state->xRegister);
 
   writeMemory(memoryAddress, state->xRegister, state);
   state->pc += (1 + length);
@@ -471,7 +477,7 @@ int sty(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("STY", addressingMode, "set memory address %04x to y value %02x", memoryAddress, state->yRegister);
+  printInstructionDescription(state, "STY", addressingMode, "set memory address %04x to y value %02x", memoryAddress, state->yRegister);
 
   writeMemory(memoryAddress, state->yRegister, state);
   state->pc += (1 + length);
@@ -482,7 +488,7 @@ int sec(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("SEC", addressingMode, "set carry flag to 1");
+  printInstructionDescription(state, "SEC", addressingMode, "set carry flag to 1");
 
   state->carryFlag = 1;
   state->pc += (1 + length);
@@ -493,7 +499,7 @@ int cli(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("CLI", addressingMode, "set interrupt disable flag to 0");
+  printInstructionDescription(state, "CLI", addressingMode, "set interrupt disable flag to 0");
 
   state->interruptDisable = 0;
   state->pc += (1 + length);
@@ -504,7 +510,7 @@ int sei(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("SEI", addressingMode, "set interrupt disable flag to 1");
+  printInstructionDescription(state, "SEI", addressingMode, "set interrupt disable flag to 1");
 
   state->interruptDisable = 1;
   state->pc += (1 + length);
@@ -515,7 +521,7 @@ int cld(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("CLD", addressingMode, "set decimal flag to 0");
+  printInstructionDescription(state, "CLD", addressingMode, "set decimal flag to 0");
 
   state->decimalFlag = 0;
   state->pc += (1 + length);
@@ -526,7 +532,7 @@ int sed(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("SED", addressingMode, "set decimal flag to 1");
+  printInstructionDescription(state, "SED", addressingMode, "set decimal flag to 1");
 
   state->decimalFlag = 1;
   state->pc += (1 + length);
@@ -537,7 +543,7 @@ int clv(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("CLV", addressingMode, "clear overflow flag");
+  printInstructionDescription(state, "CLV", addressingMode, "clear overflow flag");
 
   state->overflowFlag = 0;
   state->pc += (1 + length);
@@ -548,7 +554,7 @@ int clc(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("CLC", addressingMode, "clear carry flag");
+  printInstructionDescription(state, "CLC", addressingMode, "clear carry flag");
 
   state->carryFlag = 0;
   state->pc += (1 + length);
@@ -564,7 +570,7 @@ int cmp(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("CMP", addressingMode, "compare value %x to acc %x", value, state->acc);
+  printInstructionDescription(state, "CMP", addressingMode, "compare value %x to acc %x", value, state->acc);
 
   unsigned char result = state->acc - value;
   setZeroFlag(result, &state->zeroFlag);
@@ -583,7 +589,7 @@ int cpx(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   length = getOperandValueWithNoPageBoundaryConsiderations(&value, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("CPX", addressingMode, "compare value %x to x value %x", value, state->xRegister);
+  printInstructionDescription(state, "CPX", addressingMode, "compare value %x to x value %x", value, state->xRegister);
 
   unsigned char result = state->xRegister - value;
   setZeroFlag(result, &state->zeroFlag);
@@ -602,7 +608,7 @@ int cpy(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   length = getOperandValueWithNoPageBoundaryConsiderations(&value, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("CPY", addressingMode, "compare value %x to y value %x", value, state->yRegister);
+  printInstructionDescription(state, "CPY", addressingMode, "compare value %x to y value %x", value, state->yRegister);
 
   unsigned char result = state->yRegister - value;
   setZeroFlag(result, &state->zeroFlag);
@@ -621,7 +627,7 @@ int bit(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   length = getOperandValueWithNoPageBoundaryConsiderations(&value, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("BIT", addressingMode, "AND acc %02x and value %02x", state->acc, value);
+  printInstructionDescription(state, "BIT", addressingMode, "AND acc %02x and value %02x", state->acc, value);
 
   unsigned char result = state->acc & value;
 
@@ -643,7 +649,7 @@ int asl(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   {
     length = 0;
     printInstruction(instr, length, state);
-    printInstructionDescription("ASL", addressingMode, "arithmetic shift left of accumulator");
+    printInstructionDescription(state, "ASL", addressingMode, "arithmetic shift left of accumulator");
 
     unsigned int result = state->acc << 1;
 
@@ -657,7 +663,7 @@ int asl(unsigned char instr, enum AddressingMode addressingMode, struct Computer
     unsigned char value = readMemory(memoryAddress, state);
 
     printInstruction(instr, length, state);
-    printInstructionDescription("ASL", addressingMode, "arithmetic shift left of value", value);
+    printInstructionDescription(state, "ASL", addressingMode, "arithmetic shift left of value", value);
 
     unsigned int bigResult = value << 1;
     unsigned char smallResult = bigResult;
@@ -682,7 +688,7 @@ int rol(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   {
     length = 0;
     printInstruction(instr, length, state);
-    printInstructionDescription("ROL", addressingMode, "rotate left of accumulator", value);
+    printInstructionDescription(state, "ROL", addressingMode, "rotate left of accumulator", value);
 
     unsigned char result = state->acc << 1;
 
@@ -698,7 +704,7 @@ int rol(unsigned char instr, enum AddressingMode addressingMode, struct Computer
     unsigned char value = readMemory(memoryAddress, state);
 
     printInstruction(instr, length, state);
-    printInstructionDescription("ROL", addressingMode, "rotate left of value %02x", value);
+    printInstructionDescription(state, "ROL", addressingMode, "rotate left of value %02x", value);
 
     unsigned char oldCarryFlag = state->carryFlag;
     unsigned char result = value << 1;
@@ -733,7 +739,7 @@ int ror(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   }
 
   printInstruction(instr, length, state);
-  printInstructionDescription("ROR", addressingMode, "rotate right of value %02x", *value);
+  printInstructionDescription(state, "ROR", addressingMode, "rotate right of value %02x", *value);
 
   unsigned char oldBitZero = (*value & 0x01) != 0; 
   unsigned char result = *value >> 1;
@@ -774,7 +780,7 @@ int lsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   }
 
   printInstruction(instr, length, state);
-  printInstructionDescription("LSR", addressingMode, "logical shift right of value %02x", *value);
+  printInstructionDescription(state, "LSR", addressingMode, "logical shift right of value %02x", *value);
 
   unsigned char oldBitZero = (*value & 0x01) != 0; 
   unsigned char result = *value >> 1;
@@ -799,7 +805,7 @@ int inc(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   writeMemory(memoryAddress, value, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("INC", addressingMode, "increment value at memory address %x to be %02x", memoryAddress, value);
+  printInstructionDescription(state, "INC", addressingMode, "increment value at memory address %x to be %02x", memoryAddress, value);
 
   setZeroFlag(value, &state->zeroFlag);
   setNegativeFlag(value, &state->negativeFlag);
@@ -818,7 +824,7 @@ int dec(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   writeMemory(memoryAddress, value, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("DEC", addressingMode, "decrement value at memory address %x to be %02x", memoryAddress, value);
+  printInstructionDescription(state, "DEC", addressingMode, "decrement value at memory address %x to be %02x", memoryAddress, value);
 
   setZeroFlag(value, &state->zeroFlag);
   setNegativeFlag(value, &state->negativeFlag);
@@ -834,7 +840,7 @@ int and(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("AND", addressingMode, "AND acc value with %02x", value);
+  printInstructionDescription(state, "AND", addressingMode, "AND acc value with %02x", value);
 
   setAcc(state->acc & value, state);
 
@@ -849,7 +855,7 @@ int eor(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("EOR", addressingMode, "exclusive or between acc and %02x", value);
+  printInstructionDescription(state, "EOR", addressingMode, "exclusive or between acc and %02x", value);
 
   setAcc(state->acc ^ value, state);
 
@@ -864,7 +870,7 @@ int ora(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("ORA", addressingMode, "logical inclusive OR between acc and %02x", value);
+  printInstructionDescription(state, "ORA", addressingMode, "logical inclusive OR between acc and %02x", value);
 
   setAcc(state->acc | value, state);
 
@@ -891,7 +897,7 @@ int adc(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("ADC", addressingMode, "add with carry: value %02x", value);
+  printInstructionDescription(state, "ADC", addressingMode, "add with carry: value %02x", value);
 
   if (state->decimalFlag == 1)
   {
@@ -913,7 +919,7 @@ int sbc(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getOperandValue(&value, addressingMode, &pageBoundaryCrossed, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("SBC", addressingMode, "subtract with carry: value %x", value);
+  printInstructionDescription(state, "SBC", addressingMode, "subtract with carry: value %x", value);
 
   if (state->decimalFlag == 1)
   {
@@ -934,7 +940,7 @@ int jmp(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("JMP", addressingMode, "jump to memory address %x", memoryAddress);
+  printInstructionDescription(state, "JMP", addressingMode, "jump to memory address %x", memoryAddress);
 
   state->pc = memoryAddress;
   return cycleCount(instr, false);
@@ -947,7 +953,7 @@ int inx(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   setX(state->xRegister + 1, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("INX", addressingMode, "increment x register to become %x", state->xRegister);
+  printInstructionDescription(state, "INX", addressingMode, "increment x register to become %x", state->xRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -960,7 +966,7 @@ int iny(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   setY(state->yRegister + 1, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("INY", addressingMode, "increment y register to become %x", state->yRegister);
+  printInstructionDescription(state, "INY", addressingMode, "increment y register to become %x", state->yRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -973,7 +979,7 @@ int dex(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   setX(state->xRegister - 1, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("DEX", addressingMode, "decrement x register to become %x", state->xRegister);
+  printInstructionDescription(state, "DEX", addressingMode, "decrement x register to become %x", state->xRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -986,7 +992,7 @@ int dey(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   setY(state->yRegister - 1, state);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("DEY", addressingMode, "decrement y register to become %x", state->yRegister);
+  printInstructionDescription(state, "DEY", addressingMode, "decrement y register to become %x", state->yRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -997,7 +1003,7 @@ int nop(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   int length = 0;
   
   printInstruction(instr, length, state);
-  printInstructionDescription("NOP", addressingMode, "do nothing");
+  printInstructionDescription(state, "NOP", addressingMode, "do nothing");
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1012,7 +1018,7 @@ int php(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("PHP", addressingMode, "push status flags %02x to stack", value);
+  printInstructionDescription(state, "PHP", addressingMode, "push status flags %02x to stack", value);
 
   pushToStack(value, state->memory, &state->stackRegister);
 
@@ -1034,7 +1040,7 @@ int plp(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("PLP", addressingMode, "pull from stack and into status flags");
+  printInstructionDescription(state, "PLP", addressingMode, "pull from stack and into status flags");
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1046,7 +1052,7 @@ int pla(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("PLA", addressingMode, "pull from stack and into acc: %02x", state->acc);
+  printInstructionDescription(state, "PLA", addressingMode, "pull from stack and into acc: %02x", state->acc);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1056,7 +1062,7 @@ int pha(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("PHA", addressingMode, "push acc value %02x to stack at position %02x", state->acc, state->stackRegister);
+  printInstructionDescription(state, "PHA", addressingMode, "push acc value %02x to stack at position %02x", state->acc, state->stackRegister);
 
   pushToStack(state->acc, state->memory, &state->stackRegister);
 
@@ -1095,7 +1101,7 @@ int beq(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {  
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 1, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BEQ", addressingMode, "branch if the zero flag is one; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BEQ", addressingMode, "branch if the zero flag is one; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1103,7 +1109,7 @@ int bcc(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {  
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->carryFlag == 0, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BCC", addressingMode, "branch if the carry flag is zero; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BCC", addressingMode, "branch if the carry flag is zero; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1111,7 +1117,7 @@ int bcs(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {  
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->carryFlag == 1, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BCS", addressingMode, "branch if the carry flag is set; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BCS", addressingMode, "branch if the carry flag is set; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1119,7 +1125,7 @@ int bvc(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {  
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->overflowFlag == 0, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BVC", addressingMode, "branch if the overflow flag is zero; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BVC", addressingMode, "branch if the overflow flag is zero; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1127,7 +1133,7 @@ int bvs(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {  
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->overflowFlag == 1, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BVS", addressingMode, "branch if the overflow flag is set; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BVS", addressingMode, "branch if the overflow flag is set; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1135,7 +1141,7 @@ int bpl(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {  
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->negativeFlag == 0, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BPL", addressingMode, "branch if the negative flag is zero; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BPL", addressingMode, "branch if the negative flag is zero; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1143,7 +1149,7 @@ int bmi(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->negativeFlag == 1, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BMI", addressingMode, "branch if the negative flag is one; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BMI", addressingMode, "branch if the negative flag is one; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1151,7 +1157,7 @@ int bne(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int extraCycleCount = 0;
   signed char branchedByRelativeDisplacement = branchIfTrue(state->zeroFlag == 0, instr, addressingMode, &extraCycleCount, state);
-  printInstructionDescription("BNE", addressingMode, "branch if the zero flag is zero; branched by %d", branchedByRelativeDisplacement);
+  printInstructionDescription(state, "BNE", addressingMode, "branch if the zero flag is zero; branched by %d", branchedByRelativeDisplacement);
   return cycleCounts[instr] + extraCycleCount;
 }
 
@@ -1165,7 +1171,7 @@ int jsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer
   pushToStack(pcToPutInStack, state->memory, &state->stackRegister);
 
   printInstruction(instr, length, state);
-  printInstructionDescription("JSR", addressingMode, "jump to subroutine: %x", memoryAddress);
+  printInstructionDescription(state, "JSR", addressingMode, "jump to subroutine: %x", memoryAddress);
 
   state->pc = memoryAddress;
   return cycleCount(instr, false);
@@ -1180,7 +1186,7 @@ int rts(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("RTS", addressingMode, "return from subroutine: %x", memoryAddress);
+  printInstructionDescription(state, "RTS", addressingMode, "return from subroutine: %x", memoryAddress);
 
   state->pc = memoryAddress;
   state->pc += (1 + length);
@@ -1193,7 +1199,7 @@ int tay(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("TAY", addressingMode, "transfer acc %x to y reg", state->acc);
+  printInstructionDescription(state, "TAY", addressingMode, "transfer acc %x to y reg", state->acc);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1205,7 +1211,7 @@ int tya(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("TYA", addressingMode, "transfer Y %x to acc", state->yRegister);
+  printInstructionDescription(state, "TYA", addressingMode, "transfer Y %x to acc", state->yRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1217,7 +1223,7 @@ int tax(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("TAX", addressingMode, "transfer acc %x to x reg", state->acc);
+  printInstructionDescription(state, "TAX", addressingMode, "transfer acc %x to x reg", state->acc);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1229,7 +1235,7 @@ int txa(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("TXA", addressingMode, "transfer X %x to acc", state->xRegister);
+  printInstructionDescription(state, "TXA", addressingMode, "transfer X %x to acc", state->xRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1241,7 +1247,7 @@ int txs(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("TXS", addressingMode, "transfer X %x to stack reg", state->xRegister);
+  printInstructionDescription(state, "TXS", addressingMode, "transfer X %x to stack reg", state->xRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1253,7 +1259,7 @@ int tsx(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 
   int length = 0;
   printInstruction(instr, length, state);
-  printInstructionDescription("TSX", addressingMode, "transfer stack register %x to x reg", state->stackRegister);
+  printInstructionDescription(state, "TSX", addressingMode, "transfer stack register %x to x reg", state->stackRegister);
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1350,10 +1356,12 @@ enum AddressingMode addressingModes[256] = {
 int executeInstruction(unsigned char instr, struct Computer *state)
 {
 #ifdef PRINT_PC
+if (state->debuggingOn) {
   char str[20];
   sprintf(str, "PC: %04x\n", state->pc);
   printf(str);
   OutputDebugString(str);
+}
 #endif
 
   int numCycles = instructions[instr](instr, addressingModes[instr], state);
@@ -1365,6 +1373,7 @@ int executeInstruction(unsigned char instr, struct Computer *state)
     fireIrqInterrupt(state);
   }
 
+if (state->debuggingOn) {
   printState(state);
 #ifdef PRINT_STACK_VALUES
   printf("\nTop stack values: %02x %02x %02x %02x %02x\n", state->memory[0x01FF], state->memory[0x01FE], state->memory[0x01FD], state->memory[0x01FC], state->memory[0x01FB]);
@@ -1372,6 +1381,7 @@ int executeInstruction(unsigned char instr, struct Computer *state)
 #ifdef PRINT_GAP
   printf("\n\n");
 #endif
+}
 
   return numCycles;
 }

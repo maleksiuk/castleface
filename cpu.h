@@ -33,6 +33,8 @@ struct Computer
   bool pollController;
   uint8_t currentButtonBit;
   uint8_t buttons;
+
+  bool debuggingOn;
 };
 
 int executeInstruction(unsigned char instr, struct Computer *state);
