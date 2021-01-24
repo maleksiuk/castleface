@@ -288,6 +288,7 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
 
       bool flipHorizontally = attributes & 0x40;
 
+
       // 16 because the pattern table comes in 16 byte chunks 
       int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
       uint8_t *sprite = &ppu->memory[addressOfSprite];
@@ -316,21 +317,15 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
         uint8_t bit0 = (lowByte >> bitNumber) & 0x01;
         int val = bit1 << 1 | bit0;
 
-        uint8_t red = 0;
-        uint8_t green = 0;
-        uint8_t blue = 0;
-        if (val == 0) {
-        } else if (val == 1) {
-          blue = 0xFF;
-        } else if (val == 2) {
-          green = 0xFF;
-        } else if (val == 3) {
-          red = 0xFF;
+        if (val > 0) {
+          int paletteNumber = (attributes & 0x03) + 4;
+          uint8_t colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
+          struct Color color = palette[colorIndex];
+          *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
         }
-
-        *pixel = ((red << 16) | (green << 8) | blue);
       }
       
+      // TODO: I think we may want to return out of this function here due to sprite priority (only draw first one)
     }
   }
 
