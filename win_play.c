@@ -252,7 +252,7 @@ int vramIncrement(struct PPU *ppu) {
   }
 }
 
-void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *palette) {
+void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *palette, uint8_t backgroundVal) {
   unsigned char control = ppu->control;
 
   int spritePatternTableAddress = 0x0000;
@@ -267,6 +267,7 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
 
   // search through the 64 sprites to see if any affect us
   for (int i = 0; i < 256; i+=4) {
+    bool isSpriteZero = (i == 0);
     uint8_t ypos = ppu->oam[i];
     uint8_t xpos = ppu->oam[i+3];
 
@@ -318,6 +319,12 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
         int val = bit1 << 1 | bit0;
 
         if (val > 0) {
+
+          // TODO: there are other conditions to handle http://wiki.nesdev.com/w/index.php/PPU_OAM#Sprite_zero_hits
+          if (isSpriteZero && backgroundVal > 0) {
+            ppu->status = ppu->status | 0x40;  // sprite zero hit!
+          }
+
           int paletteNumber = (attributes & 0x03) + 4;
           uint8_t colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
           struct Color color = palette[colorIndex];
@@ -331,7 +338,9 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
 
 }
 
-void renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color *palette) {
+
+
+uint8_t renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color *palette) {
   unsigned char control = ppu->control;
   uint8_t universalBackgroundColor = ppu->memory[0x3F00];
 
@@ -367,11 +376,10 @@ void renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color
 
   int address = baseNametableAddress + tileRow*32 + tileCol;
 
-  // val is an índex into the background pattern table
-  unsigned char val = ppu->memory[address];
+  uint8_t indexIntoBackgroundPatternTable = ppu->memory[address];
 
   // 16 because the pattern table comes in 16 byte chunks 
-  int addressOfBackgroundTile = backgroundPatternTableAddress + (val * 16);
+  int addressOfBackgroundTile = backgroundPatternTableAddress + (indexIntoBackgroundPatternTable * 16);
 
   // TODO: right now these are the start of the background tile.
   int tileRowPixel = tileRow * 8;
@@ -392,8 +400,8 @@ void renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color
     uint32_t *pixel = (uint32_t *)(videoBufferRow);
     pixel += (tileColPixel + col);
 
-    // TODO: rename someOtherVal
-    int someOtherVal = bit1 << 1 | bit0;
+    // TODO: rename val
+    int val = bit1 << 1 | bit0;
 
     /*$3F00 	Universal background color*/
     /*$3F01-$3F03 	Background palette 0*/
@@ -401,12 +409,13 @@ void renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Color
     /*$3F09-$3F0B 	Background palette 2*/
     /*$3F0D-$3F0F 	Background palette 3 */
     uint8_t colorIndex = universalBackgroundColor;
-    if (someOtherVal > 0) {
-      colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + someOtherVal - 1];
+    if (val > 0) {
+      colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
     }
     struct Color color = palette[colorIndex];
 
     *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
+    return val;
   }
 }
 
@@ -433,8 +442,8 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
     // visible scanlines
 
     if (ppu->scanlineClockCycle >= 0 && ppu->scanlineClockCycle <= 255) {
-      renderBackgroundPixel(ppu, state, palette);
-      renderSpritePixel(ppu, state, palette);
+      uint8_t backgroundVal = renderBackgroundPixel(ppu, state, palette);
+      renderSpritePixel(ppu, state, palette, backgroundVal);
     } // end of conditional for visible clock cycle
   }
 
@@ -469,8 +478,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   unsigned char header[16];
   FILE *file;
 
-  file = fopen("donkey_kong.nes", "rb");
-  /*file = fopen("Excitebike.nes", "rb");*/
+  /*file = fopen("donkey_kong.nes", "rb");*/
+  file = fopen("Excitebike.nes", "rb");
 
   fread(header, sizeof(header), 1, file);
 
