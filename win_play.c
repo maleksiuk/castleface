@@ -37,6 +37,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 int running = 1;
 
+// TODO: get rid of global var
+int mapperNumber = 0;
+
 #define VIDEO_BUFFER_WIDTH 256
 #define VIDEO_BUFFER_HEIGHT 240
 
@@ -60,6 +63,13 @@ void print(const char *format, ...) {
 
   printf(str);
   OutputDebugString(str);
+}
+
+void printBitsUint8(uint8_t val) {
+  for (int i = 7; 0 <= i; i--) {
+    print("%c", (val & (1 << i)) ? '1' : '0');
+  }
+  print("\n");
 }
 
 void dumpOam(int num, uint8_t *oam)
@@ -165,32 +175,43 @@ void setButton(struct Computer *state, bool isButtonPressed, uint8_t position) {
 }
 
 // TODO: I'm not so sure I want this to be the final mechanism to handle PPU/CPU communication.
-void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Computer *state) 
+bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Computer *state) 
 {
+  bool shouldWriteMemory = true;
   struct PPU *ppu = state->ppuClosure->ppu;
 
   // TODO: consider using a table of function pointers
+  // TODO: make constants for these memory addresses
   if (memoryAddress == 0x2006) {
     setPPUAddr(value, ppu);
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x2007) {
     setPPUData(value, ppu, vramIncrement(ppu));
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x2001) {
     ppu->mask = value;
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x2000) {
     ppu->control = value;
+    shouldWriteMemory = true;
   } else if (memoryAddress == 0x2005) {
     // scroll
     /*print("*************** SCROLL 0x2005 write: %02x\n", value);*/
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x2003) {
     ppu->oamAddr = value;
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x2004) {
     // oamdata write
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x4014) {
     int cpuAddr = value << 8;
     int numBytes = 256 - ppu->oamAddr;
     /*print("[OAM] OAMDMA write. Will get data from CPU memory page %02x (addr: %04x). Oam addr is %02x. Num bytes: %d\n", value, cpuAddr, ppu->oamAddr, numBytes);*/
+    // TODO: I should probably write a getMemoryAddress method that translates the cpuAddr to the mapped address
     memcpy(&ppu->oam[ppu->oamAddr], &state->memory[cpuAddr], numBytes);
     /*dumpOam(1, ppu->oam);*/
+    shouldWriteMemory = false;
   } else if (memoryAddress == 0x4016) {
     /*print("************ write to 0x4016: %02x\n", value);*/
     state->pollController = (value == 1);
@@ -207,7 +228,53 @@ void onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
       setButton(state, state->keyboardInput->b, 0x01);
     }
     state->currentButtonBit = 0;  // is this right?
+    shouldWriteMemory = false;
+  } else if (memoryAddress >= 0x8000 && memoryAddress <= 0xFFFF) {
+    shouldWriteMemory = false;
+    if (mapperNumber == 1) {
+      if (value >= 0x80) {
+        print("clear the shift register\n");
+        // TODO: I think this might need to reset the mapping so that $C000-FFFF is fixed to the last prg bank
+        state->mmc1ShiftRegister = 0x0;
+        state->mmc1ShiftCounter = 0;
+      } else {
+        /*print("do not clear the shift register\n");*/
+        // put bit 0 of value in
+        uint8_t valueOfBit0 = value & 0x01;
+        if (valueOfBit0 == 0) {
+          state->mmc1ShiftRegister = state->mmc1ShiftRegister >> 1;
+        } else {
+          state->mmc1ShiftRegister = state->mmc1ShiftRegister >> 1;
+          state->mmc1ShiftRegister += 16;
+        }
+        /*printBitsUint8(state->mmc1ShiftRegister);*/
+        state->mmc1ShiftCounter++;
+
+        if (state->mmc1ShiftCounter == 5) {
+          state->mmc1ShiftCounter = 0;
+
+          if (memoryAddress >= 0xE000 && memoryAddress <= 0xFFFF) {
+            /*print("%04x, storing %02x into the prg bank thing\n", memoryAddress, state->mmc1ShiftRegister);*/
+            state->mmc1PrgRomBank = state->mmc1ShiftRegister;
+
+            // four lowest bits determine prg bank
+            uint8_t prgBank = state->mmc1PrgRomBank & 0x0F;
+            /*print("choosing prg bank %d\n", prgBank);*/
+
+            int addressOfSelectedBank = 0x8000 + (prgBank * 0x4000); 
+            state->prgRomBlock1 = &state->memory[addressOfSelectedBank];
+            state->prgRomBlock2 = &state->memory[addressOfSelectedBank + 0x2000];
+          } else {
+            print(">>>>> trying to change a different thing %04x\n", memoryAddress);
+          }
+        }
+      }
+    } else {
+      print("uih oh\n");
+    }
   }
+
+  return shouldWriteMemory;
 }
 
 unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride) {
@@ -238,6 +305,31 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
       state->currentButtonBit++;
       return buttonValue;
     }
+  } else if (memoryAddress >= 0x8000 && memoryAddress <= 0xFFFF) {
+    *shouldOverride = true;
+    // I want the 32 kB of PRG ROM to be splittable into 8 kB chunks. 
+    // 0x8000 to 0x9FFF
+    // 0xA000 to 0xBFFF
+    // 0xC000 to 0xDFFF
+    // 0xE000 to 0xFFFF
+
+    // I want to lay the cartridge memory out in a big chunk, then have
+    // four pointers into it. Maybe.
+    //
+    // When a bank switch happens, we just change the prgRomBlock pointers
+
+    if (memoryAddress >= 0x8000 && memoryAddress <= 0x9FFF) {
+      return *(state->prgRomBlock1 + (memoryAddress - 0x8000));
+    } else if (memoryAddress >= 0xA000 && memoryAddress <= 0xBFFF) {
+      return *(state->prgRomBlock2 + (memoryAddress - 0xA000));
+    } else if (memoryAddress >= 0xC000 && memoryAddress <= 0xDFFF) {
+      return *(state->prgRomBlock3 + (memoryAddress - 0xC000));
+    } else if (memoryAddress >= 0xE000 && memoryAddress <= 0xFFFF) {
+      return *(state->prgRomBlock4 + (memoryAddress - 0xE000));
+    }
+
+    // for mapper 1, we need to grab from the right spot
+    /*print("reading %04x\n", memoryAddress);*/
   }
 
   *shouldOverride = false;
@@ -479,52 +571,56 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   FILE *file;
 
   /*file = fopen("donkey_kong.nes", "rb");*/
-  file = fopen("Excitebike.nes", "rb");
+  /*file = fopen("Excitebike.nes", "rb");*/
+  file = fopen("MegaMan2.nes", "rb");
 
   fread(header, sizeof(header), 1, file);
 
-  int sizeOfPrgRomInBytes = 16 * 1024 * header[4];
-  print("Size of PRG ROM in 16kb units: %d (and in bytes: %d)\n", header[4], sizeOfPrgRomInBytes);
+  uint8_t numPrgRomUnits = header[4];
+  int sizeOfPrgRomInBytes = 16 * 1024 * numPrgRomUnits;
+  print("Size of PRG ROM in 16kb units: %d (and in bytes: %d)\n", numPrgRomUnits, sizeOfPrgRomInBytes);
 
   int sizeOfChrRomInBytes = 8 * 1024 * header[5];
   print("Size of CHR ROM in 8 KB units (Value 0 means the board uses CHR RAM): %d (and in bytes: %d)\n", header[5], sizeOfChrRomInBytes);
 
-  if ((header[7]&0x0C)==0x08) {
+  if ((header[7] >> 2) & 3) {
     print("NES 2.0 format\n");
   } else {
     print("Not NES 2.0 format\n");
   }
 
-  if ((header[6] & 0x01) == 0x01) {
+  if (header[6] & 1) {
     print("Vertical mirroring\n");
   } else {
     print("Horizontal mirroring\n");
   }
 
-  if ((header[6] & 2) == 2) {
+  if ((header[6] >> 1) & 1) {
     print("Cartridge contains battery-backed PRG RAM ($6000-7FFF) or other persistent memory\n");
   } else {
     print("Cartridge does not contain battery-packed PRG RAM\n");
   }
 
-  if ((header[6] & 4) == 4) {
+  if ((header[6] >> 2) & 1) {
     print("512-byte trainer at $7000-$71FF (stored before PRG data)\n");
   } else {
     print("No 512-byte trainer at $7000-$71FF (stored before PRG data)\n");
   }
 
-  if ((header[6] & 8) == 8) {
+  if ((header[6] >> 3) & 1) {
     print("Ignore mirroring control or above mirroring bit; instead provide four-screen VRAM\n");
   } else {
     print("Do not ignore mirroring control or above mirroring bit\n");
   }
 
-  int mapperNumber = header[7] << 8 | header[6];
+  // header[6] bits 4-7 are lower nybble
+  // header[7] bits 4-7 are upper nybble
+  mapperNumber = (header[7] & 0xF0) | (header[6] >> 4);
   print("mapper number: %d\n", mapperNumber);
 
   // TODO: check return value of mallocs and callocs
   unsigned char *memory;
-  memory = (unsigned char *) malloc(0xFFFF);
+  memory = (unsigned char *) malloc(0x8000 + sizeOfPrgRomInBytes);
 
   unsigned char *ppuMemory;
   ppuMemory = (unsigned char *) calloc(1, 0x3FFF);
@@ -554,10 +650,23 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   fread(chrRom, sizeOfChrRomInBytes, 1, file);
   fclose(file);
 
-  // put prgRom into memory at $8000-$BFFF and $C000-$FFFF   https://wiki.nesdev.com/w/index.php/NROM
-  // TODO: this shouldn't be a copy, it should be a mirror. It's ROM so it shouldn't matter though.
+  // copy prgRom starting at 0x8000, even if it's bigger than 32 kB. We will intercept reads
+  // from this memory and do the right thing based on MMC.
+  memcpy(&memory[0x8000], prgRom, sizeOfPrgRomInBytes);
+
+  /*
+  // NROM: put prgRom into memory at $8000-$BFFF and $C000-$FFFF   https://wiki.nesdev.com/w/index.php/NROM
   memcpy(&memory[0x8000], prgRom, 0x4000);
-  memcpy(&memory[0xC000], prgRom, 0x4000);
+  if (mapperNumber == 0) {
+    // "mirror" (copy in my case) of what's at 0x8000
+    memcpy(&memory[0xC000], prgRom, 0x4000);
+  } else if (mapperNumber == 1) {
+    // copy last bank of prgRom here (http://wiki.nesdev.com/w/index.php/MMC1)
+    memcpy(&memory[0xC000], prgRom + ((numPrgRomUnits - 1) * 0x4000), 0x4000);
+  } else {
+    exit(EXIT_FAILURE);
+  }
+  */
 
   // TODO: might as well just read chrRom right into ppuMemory, right?
   memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
@@ -623,13 +732,32 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   uint32_t loopCount = 0;
 
-  print("memory address to start is: %02x%02x\n", memory[0xFFFD], memory[0xFFFC]);
-  int memoryAddressToStartAt = (memory[0xFFFD] << 8) | memory[0xFFFC];
+
 
   struct KeyboardInput keyboardInput = { .up = false  };
   struct PPUClosure ppuClosure = { .ppu = &ppu, .onMemoryWrite = &onCPUMemoryWrite, .onMemoryRead = &onCPUMemoryRead };
 
   struct Computer state = { .memory = memory, .keyboardInput = &keyboardInput, .ppuClosure = &ppuClosure };
+
+  if (mapperNumber == 0) {
+    state.prgRomBlock1 = &memory[0x8000];
+    state.prgRomBlock2 = &memory[0xA000];
+    // for NROM the second 16 kB is a mirror of the first 16 kB
+    state.prgRomBlock3 = &memory[0x8000];
+    state.prgRomBlock4 = &memory[0xA000];
+  } else if (mapperNumber == 1) {
+    // For mapper 1 it seems to be important to start off with the last 16 kB bank in 0xC000 - 0xFFFF
+    state.prgRomBlock1 = &memory[0x8000];
+    state.prgRomBlock2 = &memory[0xA000];
+    int addressOfLastBank = 0x8000 + ((numPrgRomUnits - 1) * 0x4000); 
+    state.prgRomBlock3 = &memory[addressOfLastBank];
+    state.prgRomBlock4 = &memory[addressOfLastBank + 0x2000];
+  } else {
+    exit(EXIT_FAILURE);
+  }
+
+  int memoryAddressToStartAt = (readMemory(0xFFFD, &state) << 8) | readMemory(0xFFFC, &state);
+  print("memory address to start is: %04x\n", memoryAddressToStartAt);
   state.pc = memoryAddressToStartAt;
 
   int instructionsExecuted = 0;
@@ -696,7 +824,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     uint8_t ppuStatusBefore = ppu.status;
 
-    instr = state.memory[state.pc];
+    instr = readMemory(state.pc, &state);
     int cycles = executeInstruction(instr, &state);
 
     for (int i = 0; i < cycles*3; i++) {
@@ -732,7 +860,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       int64_t perfCount = endPerfCount.QuadPart - lastPerfCount.QuadPart;
       double milliseconds = (1000.0f*(double)perfCount) / (double)perfFrequency;
       double framesPerSecond = (double)perfFrequency / (double)perfCount;
-      print("# of milliseconds for frame: %f\nframes per second: %f\n", milliseconds, framesPerSecond);
+      print("# of milliseconds for frame: %f  (frames per second: %f)\n", milliseconds, framesPerSecond);
 
       lastPerfCount = endPerfCount;
     }

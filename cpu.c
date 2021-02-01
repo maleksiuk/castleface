@@ -80,13 +80,16 @@ void printState(struct Computer *state)
 
 void writeMemory(unsigned int memoryAddress, unsigned char value, struct Computer *state)
 {
-  state->memory[memoryAddress] = value;
+  bool shouldWriteMemory = true;
   if (state->ppuClosure != 0) {
-    state->ppuClosure->onMemoryWrite(memoryAddress, value, state);
+    shouldWriteMemory = state->ppuClosure->onMemoryWrite(memoryAddress, value, state);
+  }
+  if (shouldWriteMemory) {
+    state->memory[memoryAddress] = value;
   }
 }
 
-// TODO: should I call this from every place that reads memory?
+// TODO: check to see if I'm missing any places that should call this instead of memory[]
 unsigned char readMemory(unsigned int memoryAddress, struct Computer *state) {
   unsigned char val;
 
@@ -151,64 +154,64 @@ int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressing
   else if (addressingMode == Absolute)
   {
     length = 2;
-    *memoryAddress = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
+    *memoryAddress = (readMemory(state->pc+2, state) << 8) | readMemory(state->pc+1, state);
   }
   else if (addressingMode == ZeroPage)
   {
     length = 1;
-    *memoryAddress = state->memory[state->pc+1];
+    *memoryAddress = readMemory(state->pc+1, state);
   }
   else if (addressingMode == ZeroPageX)
   {
     length = 1;
-    unsigned char wrapAroundMemoryAddress = state->memory[state->pc+1] + state->xRegister;
+    unsigned char wrapAroundMemoryAddress = readMemory(state->pc+1, state) + state->xRegister;
     *memoryAddress = wrapAroundMemoryAddress;
   }
   else if (addressingMode == ZeroPageY)
   {
     length = 1;
-    unsigned char wrapAroundMemoryAddress = state->memory[state->pc+1] + state->yRegister;
+    unsigned char wrapAroundMemoryAddress = readMemory(state->pc+1, state) + state->yRegister;
     *memoryAddress = wrapAroundMemoryAddress;
   }
   else if (addressingMode == AbsoluteX)
   {
     length = 2;
-    unsigned char lowByte = state->memory[state->pc+1];
-    *memoryAddress = (state->memory[state->pc+2] << 8) | lowByte;
+    unsigned char lowByte = readMemory(state->pc+1, state);
+    *memoryAddress = (readMemory(state->pc+2, state) << 8) | lowByte;
     *pageBoundaryCrossed = (lowByte + state->xRegister > 255);
     *memoryAddress += state->xRegister;
   }
   else if (addressingMode == AbsoluteY)
   {
     length = 2;
-    unsigned char lowByte = state->memory[state->pc+1];
-    *memoryAddress = (state->memory[state->pc+2] << 8) | lowByte;
+    unsigned char lowByte = readMemory(state->pc+1, state);
+    *memoryAddress = (readMemory(state->pc+2, state) << 8) | lowByte;
     *pageBoundaryCrossed = (lowByte + state->yRegister > 255);
     *memoryAddress += state->yRegister;
   }
   else if (addressingMode == IndirectIndexed)
   {
     length = 1;
-    unsigned char operand = state->memory[state->pc+1]; 
-    unsigned char lowByte = state->memory[operand];
-    *memoryAddress = (state->memory[operand+1] << 8) | lowByte;
+    unsigned char operand = readMemory(state->pc+1, state); 
+    unsigned char lowByte = readMemory(operand, state);
+    *memoryAddress = (readMemory(operand+1, state) << 8) | lowByte;
     *pageBoundaryCrossed = (lowByte + state->yRegister > 255);
     *memoryAddress += state->yRegister;
   }
   else if (addressingMode == IndexedIndirect)
   {
     length = 1;
-    unsigned char operand = state->memory[state->pc+1]; 
+    unsigned char operand = readMemory(state->pc+1, state); 
     unsigned char wrapAroundMemoryAddress = operand + state->xRegister;
-    *memoryAddress = (state->memory[wrapAroundMemoryAddress+1] << 8) | state->memory[wrapAroundMemoryAddress];
+    *memoryAddress = (readMemory(wrapAroundMemoryAddress+1, state) << 8) | readMemory(wrapAroundMemoryAddress, state);
   }
   else if (addressingMode == Indirect)
   {
     length = 2;
-    unsigned int memoryAddress1 = (state->memory[state->pc+2] << 8) | state->memory[state->pc+1];
-    unsigned int memoryAddress2 = ((state->memory[state->pc+2] << 8) | state->memory[state->pc+1]) + 1;
-    unsigned char lowByte = state->memory[memoryAddress1];
-    unsigned char highByte = state->memory[memoryAddress2];
+    unsigned int memoryAddress1 = (readMemory(state->pc+2, state) << 8) | readMemory(state->pc+1, state);
+    unsigned int memoryAddress2 = ((readMemory(state->pc+2, state) << 8) | readMemory(state->pc+1, state)) + 1;
+    unsigned char lowByte = readMemory(memoryAddress1, state);
+    unsigned char highByte = readMemory(memoryAddress2, state);
     *memoryAddress = (highByte << 8) | lowByte;
   }
   else
@@ -724,39 +727,44 @@ int ror(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 {
   int length = 0;
 
-  unsigned char *value;
+  unsigned char value;
 
-  if (addressingMode == Accumulator)
-  {
+  if (addressingMode == Accumulator) {
     length = 0;
-    value = &state->acc;
+    value = state->acc;
   }
-  else
-  {
+  else {
     unsigned int memoryAddress = 0;
     length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
-    value = &state->memory[memoryAddress];
+    value = readMemory(memoryAddress, state);
   }
 
   printInstruction(instr, length, state);
-  printInstructionDescription(state, "ROR", addressingMode, "rotate right of value %02x", *value);
+  printInstructionDescription(state, "ROR", addressingMode, "rotate right of value %02x", value);
 
-  unsigned char oldBitZero = (*value & 0x01) != 0; 
-  unsigned char result = *value >> 1;
+  unsigned char oldBitZero = (value & 0x01) != 0; 
+  unsigned char result = value >> 1;
   // make bit 7 have the value of the current carry flag
-  if (state->carryFlag == 1)
-  {
+  if (state->carryFlag == 1) {
     result = result | 0x80;
   }
-  else
-  {
+  else {
     result = result & 0x7F;
   }
 
   state->carryFlag = oldBitZero;
-  *value = result;
   setZeroFlag(result, &state->zeroFlag);
   setNegativeFlag(result, &state->negativeFlag);
+
+  if (addressingMode == Accumulator) {
+    state->acc = result;
+  }
+  else {
+    // TODO: this duplication is unfortunate
+    unsigned int memoryAddress = 0;
+    getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
+    writeMemory(memoryAddress, result, state);
+  }
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -765,31 +773,38 @@ int ror(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 int lsr(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
-  unsigned char *value;
+  unsigned char value;
 
-  if (addressingMode == Accumulator)
-  {
+  if (addressingMode == Accumulator) {
     length = 0;
-    value = &state->acc;
+    value = state->acc;
   }
-  else
-  {
+  else {
     unsigned int memoryAddress = 0;
     length = getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
-    value = &state->memory[memoryAddress];
+    value = readMemory(memoryAddress, state);
   }
 
   printInstruction(instr, length, state);
-  printInstructionDescription(state, "LSR", addressingMode, "logical shift right of value %02x", *value);
+  printInstructionDescription(state, "LSR", addressingMode, "logical shift right of value %02x", value);
 
-  unsigned char oldBitZero = (*value & 0x01) != 0; 
-  unsigned char result = *value >> 1;
+  unsigned char oldBitZero = (value & 0x01) != 0; 
+  unsigned char result = value >> 1;
 
   result = result & 0x7F;  // clear bit 7
-  *value = result;
   state->carryFlag = oldBitZero;
   setZeroFlag(result, &state->zeroFlag);
   setNegativeFlag(result, &state->negativeFlag);
+
+  if (addressingMode == Accumulator) {
+    state->acc = result;
+  }
+  else {
+    // TODO: this duplication is unfortunate
+    unsigned int memoryAddress = 0;
+    getMemoryAddressWithNoPageBoundaryConsiderations(&memoryAddress, addressingMode, state);
+    writeMemory(memoryAddress, result, state);
+  }
 
   state->pc += (1 + length);
   return cycleCount(instr, false);
@@ -1290,7 +1305,7 @@ void fireIrqInterrupt(struct Computer *state) {
   pushToStack(processorStatus, state->memory, &state->stackRegister);
 
   state->interruptDisable = 1;
-  state->pc = (state->memory[0xffff] << 8) | state->memory[0xfffe];
+  state->pc = (readMemory(0xffff, state) << 8) | readMemory(0xfffe, state);
 }
 
 // TODO: return number of cycles for interrupts
@@ -1308,7 +1323,8 @@ void fireNmiInterrupt(struct Computer *state) {
   pushToStack(processorStatus, state->memory, &state->stackRegister);
 
   state->interruptDisable = 1;
-  state->pc = (state->memory[0xfffb] << 8) | state->memory[0xfffa];
+  
+  state->pc = (readMemory(0xfffb, state) << 8) | readMemory(0xfffa, state);
 }
 
 // instruction table

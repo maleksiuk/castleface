@@ -28,7 +28,7 @@ struct PPU
 struct PPUClosure
 {
   struct PPU *ppu;
-  void (*onMemoryWrite)(unsigned int memoryAddress, unsigned char value, struct Computer *state);
+  bool (*onMemoryWrite)(unsigned int memoryAddress, unsigned char value, struct Computer *state);
   unsigned char (*onMemoryRead)(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride);
 };
 
