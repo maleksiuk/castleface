@@ -174,7 +174,7 @@ void setPPUData(unsigned char value, struct PPU *ppu, int inc)
 
 void setButton(struct Computer *state, bool isButtonPressed, uint8_t position) {
   if (isButtonPressed) {
-    state->buttons = state->buttons | position;
+    state->buttons = state->buttons | (1 << position);
   }
 }
 
@@ -326,14 +326,14 @@ bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     if (state->pollController) {
       // copy keyboard input into buttons
       state->buttons = 0; 
-      setButton(state, state->keyboardInput->up, 0x10); 
-      setButton(state, state->keyboardInput->down, 0x20); 
-      setButton(state, state->keyboardInput->left, 0x40); 
-      setButton(state, state->keyboardInput->right, 0x80); 
-      setButton(state, state->keyboardInput->select, 0x04); 
-      setButton(state, state->keyboardInput->start, 0x08); 
-      setButton(state, state->keyboardInput->a, 0x00); 
-      setButton(state, state->keyboardInput->b, 0x01);
+      setButton(state, state->keyboardInput->up, 4); 
+      setButton(state, state->keyboardInput->down, 5); 
+      setButton(state, state->keyboardInput->left, 6); 
+      setButton(state, state->keyboardInput->right, 7); 
+      setButton(state, state->keyboardInput->select, 2); 
+      setButton(state, state->keyboardInput->start, 3); 
+      setButton(state, state->keyboardInput->a, 0); 
+      setButton(state, state->keyboardInput->b, 1);
     }
     state->currentButtonBit = 0;  // is this right?
     shouldWriteMemory = false;
