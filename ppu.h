@@ -9,15 +9,24 @@ struct PPU
   unsigned char *memory;
   uint8_t *oam; // 256 bytes (64 sprite info chunks, 4 bytes each)
 
-  unsigned int ppuAddr;
+  uint16_t vRegister;  // current vram address; 15 bits
+  uint16_t tRegister;  // temporary vram address; 15 bits
+  uint8_t xRegister; // fine X scroll; 3 bits
+  bool wRegister; // first or second write toggle
 
-  unsigned char ppuAddrGateHigh;
-  unsigned char ppuAddrGateLow;
-  bool ppuAddrSetLow;
+  uint16_t patternTableShiftRegisterLow;
+  uint16_t patternTableShiftRegisterHigh;
+  uint8_t attributeTableShiftRegisterHigh;
+  uint8_t attributeTableShiftRegisterLow;
+
+  uint8_t nt;
+  uint8_t at;
+  uint8_t ptTileLow;
+  uint8_t ptTileHigh;
 
   // https://wiki.nesdev.com/w/index.php/PPU_registers
   unsigned char control; // mapped to CPU address $2000
-  unsigned char mask;    // mapped to CPU address $2001 
+  uint8_t mask;    // mapped to CPU address $2001 
   unsigned char status;  // mapped to CPU address $2002
   uint8_t oamAddr;       // mapped to CPU address $2003
 
