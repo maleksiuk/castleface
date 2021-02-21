@@ -18,6 +18,7 @@ struct PPU
   uint16_t patternTableShiftRegisterHigh;
   uint8_t attributeTableShiftRegisterHigh;
   uint8_t attributeTableShiftRegisterLow;
+  uint8_t paletteNumber;  // TODO: temporary
 
   uint8_t nt;
   uint8_t at;

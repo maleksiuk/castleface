@@ -554,8 +554,10 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   const int x = ppu->scanlineClockCycle;
   uint8_t universalBackgroundColor = ppu->memory[0x3F00];
 
-  uint8_t bit1 = (ppu->patternTableShiftRegisterHigh & 0x8000) != 0;
-  uint8_t bit0 = (ppu->patternTableShiftRegisterLow & 0x8000) != 0;
+  uint8_t fineX = ppu->xRegister;
+
+  uint8_t bit1 = ((ppu->patternTableShiftRegisterHigh << fineX) & 0x8000) != 0;
+  uint8_t bit0 = ((ppu->patternTableShiftRegisterLow << fineX) & 0x8000) != 0;
   /*print("regs are %04x %04x; bit1: %d, bit0: %d\n", ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow, bit1, bit0);*/
 
   /*
@@ -583,13 +585,14 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   /*$3F05-$3F07 	Background palette 1*/
   /*$3F09-$3F0B 	Background palette 2*/
   /*$3F0D-$3F0F 	Background palette 3 */
-  /*
+  uint8_t paletteNumber = ppu->paletteNumber;
   uint8_t colorIndex = universalBackgroundColor;
   if (val > 0) {
     colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
   }
   struct Color color = palette[colorIndex];
-  */
+
+  /*
   struct Color color = { .red = 0, .green = 0, .blue = 0 };
   if (val == 0) {
   } else if (val == 1) {
@@ -599,6 +602,7 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   } else {
     color.blue = 0xFF;
   }
+  */
 
   *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
   return val;
@@ -623,23 +627,6 @@ uint8_t renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Co
   // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes. Each tile is 8x8 pixels.
   int tileRow = y / 8;
   int tileCol = x / 8;
-  int coarseY = (ppu->vRegister >> 5) & 0x001F;
-  int coarseX = ppu->vRegister & 0x001F;
-  uint8_t fineY = (ppu->vRegister >> 12) & 0x07;
-  uint8_t fineX = ppu->xRegister;
-
-  /*tileRow = coarseY;*/
-  /*tileCol = coarseX;*/
-
-  /*print("(%d, %d) (%d, %d) / (y, x) %d,%d %d,%d  / %02x %02x\n", tileRow, tileCol, coarseY, coarseX, y, x, fineY, fineX, origBaseNametableAddressCode, baseNametableAddressCode);*/
-  /*print("(%d, %d) / (fineY, fineX) %d, %d  / nt %02x\n", coarseY, coarseX, fineY, fineX, baseNametableAddressCode);*/
-
-  /*
-  if (x / 8 == 0 && y / 8 == 0) {
-    print("ORIG: (%d, %d) working on tile at row, col: %d, %d\n", x, y, tileRow, x / 8);
-    print("SCRL: (%d, %d) working on tile at row, col: %d, %d\n", x, y, tileRow, tileCol);
-  }
-  */
 
   // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
   int attributeTableAddress = baseNametableAddress + 960;
@@ -718,15 +705,7 @@ uint8_t renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Co
 
 void fetchyFetchy(struct PPU *ppu) {
   /*print("fetchyFetchy: line %d, cycle %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
-  /*const int y = ppu->scanline;*/
-  /*const int x = ppu->scanlineClockCycle;*/
-  /*int tileRow = y / 8;*/
-  /*int tileCol = x / 8;*/
-  /*int coarseY = (ppu->vRegister >> 5) & 0x001F;*/
-  /*int coarseY = (ppu->vRegister & 0x03E0) >> 5;*/
-  /*int coarseX = ppu->vRegister & 0x001F;*/
 
-  /*uint16_t tileAddress = 0x2000 | (ppu->vRegister & 0x0FFF);*/
   // TODO: make sure this one from the wiki matches the one we use down there to get the attributeByte
   /*uint16_t attributeAddress = 0x23C0 | (ppu->vRegister & 0x0C00) | ((ppu->vRegister >> 4) & 0x38) | ((ppu->vRegister >> 2) & 0x07);*/
 
@@ -747,6 +726,7 @@ void fetchyFetchy(struct PPU *ppu) {
   int attributeBlockCol = coarseX / 4;  // 0 to 7
   uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
 
+  /*
   // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
   uint8_t quadrantX = (coarseX - attributeBlockCol*4) / 2;
   uint8_t quadrantY = (coarseY - attributeBlockRow*4) / 2;
@@ -754,10 +734,7 @@ void fetchyFetchy(struct PPU *ppu) {
 
   // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
   uint8_t paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
-
-  // hmm... I wanted to store paletteNumber for each of the 8 pixels, but isn't it the same for all of them? why do
-  // we need so much space?
-  // oh... I bet it's the index into the palette. No... isn't that what will be in the pattern table registers?
+  */
 
   // 0: $0000; 1: $1000
   uint8_t backgroundPatternTableAddressCode = (ppu->control & 0x10) >> 4;
@@ -773,25 +750,14 @@ void fetchyFetchy(struct PPU *ppu) {
   uint8_t byte1 = ppu->memory[addressOfBackgroundTile+8+fineY];
   uint8_t byte0 = ppu->memory[addressOfBackgroundTile+fineY];
 
-  /*
-  if (ppu->scanline <= moop && ppu->scanlineClockCycle == 328) {
-    print("fetch tile for next scanline");
-  }
-  */
-
-  /*uint8_t bit1 = (ppu->memory[addressOfBackgroundTile+8+fineY] >> bit & 0x01) != 0;*/
-  /*uint8_t bit0 = (ppu->memory[addressOfBackgroundTile+fineY] >> bit & 0x01) != 0;*/
-
-  ppu->nt = baseNametableAddressCode;
+  ppu->nt = address;
   // what do we store here? there are two attribute shift registers to fill. https://forums.nesdev.com/viewtopic.php?t=10348
   // last comment here seems important: https://forums.nesdev.com/viewtopic.php?t=17568
-  // oh, another option is to not worry about it. I can store whatever I want... doesn't have to match the hardware.
-  /*ppu->at = moop;*/
+  ppu->at = attributeByte;
   ppu->ptTileHigh = byte0;
   ppu->ptTileLow = byte1;
   /*print("set ptTiles %02x %02x\n", ppu->ptTileHigh, ppu->ptTileLow);*/
 
-  /*print("scanline %d, cycle %d - fetch for %d, %d; tile address %04x\n", y, x, coarseY, coarseX, tileAddress);*/
 }
 
 void shifterReload(struct PPU *ppu) {
@@ -801,7 +767,21 @@ void shifterReload(struct PPU *ppu) {
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh & ~0x00FF;  // clear the bottom 8 bits
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh | (ppu->ptTileHigh);
 
-  /*print("set pt shift regs %04x %04x\n", ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow);*/
+  uint8_t attributeByte = ppu->at;
+
+  // TODO: make sure I understand this
+  uint8_t quadrantX = ppu->nt & 0x02 == 0x02;
+  uint8_t quadrantY = ppu->nt & 0x40 == 0x40;
+  /*print("quadX: %d, quadY: %d\n", quadrantX, quadrantY);*/
+
+  // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
+  /*uint8_t quadrantX = (coarseX - attributeBlockCol*4) / 2;*/
+  /*uint8_t quadrantY = (coarseY - attributeBlockRow*4) / 2;*/
+  uint8_t quadrantNumber = quadrantY << 1 | quadrantX;
+
+  // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
+  ppu->paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
+
   /*ppu->attributeTableShiftRegisterHigh*/
   /*ppu->attributeTableShiftRegisterLow*/
 }
