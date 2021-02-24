@@ -42,6 +42,7 @@ int mapperNumber = 0;
 
 #define VIDEO_BUFFER_WIDTH 256
 #define VIDEO_BUFFER_HEIGHT 240
+#define STARTING_PIXEL 2
 
 void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
@@ -464,7 +465,7 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
 
   // find which pixel we're working on, see if that matches a sprite, and then figure out what to render there if it does.
 
-  int pixelX = ppu->scanlineClockCycle;
+  int pixelX = ppu->scanlineClockCycle - STARTING_PIXEL;
   int pixelY = ppu->scanline;
 
   // search through the 64 sprites to see if any affect us
@@ -569,21 +570,11 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   videoBufferRow = videoBufferRow + (y * VIDEO_BUFFER_WIDTH * 4);
 
   uint32_t *pixel = (uint32_t *)(videoBufferRow);
-  pixel += x;
-
+  pixel += (x - STARTING_PIXEL);
 
   // TODO: rename val
   int val = bit1 << 1 | bit0;
 
-  // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8
-  if (ppu->debuggingOn && ppu->scanline == 9*8 + 2 && ppu->scanlineClockCycle <= 19) {
-    print("[cycle %d / %d] [fineX: %d], print pixel %02x\n", ppu->scanline, ppu->scanlineClockCycle, fineX, val);
-    char high[17] = "";
-    char low[17] = "";
-    sprintBitsUint16(high, ppu->patternTableShiftRegisterHigh);
-    sprintBitsUint16(low, ppu->patternTableShiftRegisterLow);
-    print("  --> using shift regs high: %s, low: %s\n", high, low);
-  }
 
   /*$3F00 	Universal background color*/
   /*$3F01-$3F03 	Background palette 0*/
@@ -596,6 +587,18 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
     colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
   }
   struct Color color = palette[colorIndex];
+
+  uint16_t tmpPalAddr = 0x3F01 + 4*paletteNumber + val - 1;
+
+  // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8, tile 16 starts at 16*8
+  if (ppu->debuggingOn && ppu->scanline == 16*8 + 0 && ppu->scanlineClockCycle <= 19) {
+    print("[cycle %d / %d] [fineX: %d] [pal addr %04x], print pixel %02x\n", ppu->scanline, ppu->scanlineClockCycle, fineX, tmpPalAddr, val);
+    char high[17] = "";
+    char low[17] = "";
+    sprintBitsUint16(high, ppu->patternTableShiftRegisterHigh);
+    sprintBitsUint16(low, ppu->patternTableShiftRegisterLow);
+    print("  --> using shift regs high: %s, low: %s\n", high, low);
+  }
 
   /*
   struct Color color = { .red = 0, .green = 0, .blue = 0 };
@@ -732,7 +735,8 @@ void fetchyFetchy(struct PPU *ppu) {
   // want to find byte in attributeTable for coarseY, coarseX
   int attributeBlockRow = coarseY / 4;  // 0 to 7
   int attributeBlockCol = coarseX / 4;  // 0 to 7
-  uint8_t attributeByte = ppu->memory[attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol)];
+  const uint16_t attributeAddress = attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol);
+  uint8_t attributeByte = ppu->memory[attributeAddress];
 
   /*
   // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
@@ -761,9 +765,9 @@ void fetchyFetchy(struct PPU *ppu) {
   uint8_t byte1 = ppu->memory[addressOfBackgroundTile+8+fineY];
   uint8_t byte0 = ppu->memory[addressOfBackgroundTile+fineY];
 
-  if (ppu->debuggingOn && ((coarseX == 0 && coarseY == 9 && fineY == 2) || (coarseX == 1 && coarseY == 9 && fineY == 2))) {
-    print("[cycle %d / %d] [ppu addr: %04x] [tile addr: %04x] fetchy for tile Y: %d, X: %d, row %d (should render on line %d, pxs %d - %d)\n", 
-        ppu->scanline, ppu->scanlineClockCycle, address, addressOfBackgroundTile, coarseY, coarseX, fineY,
+  if (ppu->debuggingOn && ((coarseX == 0 && coarseY == 16 && fineY == 0) || (coarseX == 1 && coarseY == 16 && fineY == 0))) {
+    print("[cycle %d / %d] [ppu addr: %04x] [tile addr: %04x] [attr addr: %04x] [attr byte: %02x] fetchy for tile Y: %d, X: %d, row %d (should render on line %d, pxs %d - %d)\n", 
+        ppu->scanline, ppu->scanlineClockCycle, address, addressOfBackgroundTile, attributeAddress, attributeByte, coarseY, coarseX, fineY,
         coarseY * 8 + fineY, coarseX * 8, coarseX * 8 + 8);
 
     int vals[8];
@@ -793,9 +797,6 @@ void shifterReload(struct PPU *ppu) {
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh & ~0x00FF;  // clear the bottom 8 bits
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh | (ppu->ptTileHigh);
 
-  if (ppu->debuggingOn) {
-    print("shifter reload. high/low: %04x, %04x -> %04x, %04x\n", highWas, lowWas, ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow);
-  }
 
   uint8_t attributeByte = ppu->at;
 
@@ -811,6 +812,11 @@ void shifterReload(struct PPU *ppu) {
 
   // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
   ppu->paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
+
+  if (ppu->debuggingOn) {
+    print("shifter reload. high/low: %04x, %04x -> %04x, %04x\n", highWas, lowWas, ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow);
+    print("  -> paletteNumber: %02x\n", ppu->paletteNumber);
+  }
 
   /*ppu->attributeTableShiftRegisterHigh*/
   /*ppu->attributeTableShiftRegisterLow*/
@@ -926,7 +932,7 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
   } else if (ppu->scanline >= 0 && ppu->scanline <= 239) {
     // visible scanlines
 
-    if (ppu->scanlineClockCycle >= 2 && ppu->scanlineClockCycle <= 257) {
+    if (ppu->scanlineClockCycle >= STARTING_PIXEL && ppu->scanlineClockCycle < VIDEO_BUFFER_WIDTH + STARTING_PIXEL) {
       uint8_t backgroundVal = renderBackgroundPixel2(ppu, state, palette);
       renderSpritePixel(ppu, state, palette, backgroundVal);
     } // end of conditional for visible clock cycle
