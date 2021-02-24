@@ -574,11 +574,16 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
 
   // TODO: rename val
   int val = bit1 << 1 | bit0;
-  /*
-  if (val != 0) {
-    print("VAL: %d\n", val);
+
+  // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8
+  if (ppu->debuggingOn && ppu->scanline == 9*8 + 2 && ppu->scanlineClockCycle <= 19) {
+    print("[cycle %d / %d] [fineX: %d], print pixel %02x\n", ppu->scanline, ppu->scanlineClockCycle, fineX, val);
+    char high[17] = "";
+    char low[17] = "";
+    sprintBitsUint16(high, ppu->patternTableShiftRegisterHigh);
+    sprintBitsUint16(low, ppu->patternTableShiftRegisterLow);
+    print("  --> using shift regs high: %s, low: %s\n", high, low);
   }
-  */
 
   /*$3F00 	Universal background color*/
   /*$3F01-$3F03 	Background palette 0*/
@@ -651,13 +656,11 @@ uint8_t renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Co
   int addressOfBackgroundTile = backgroundPatternTableAddress + (indexIntoBackgroundPatternTable * 16);
   /*print("orig -- addressOfBackgroundTile: %04x\n", addressOfBackgroundTile);*/
 
-  // TODO: right now these are the start of the background tile.
   int tileRowPixel = tileRow * 8;
   int tileColPixel = tileCol * 8;
 
   int row = y - tileRowPixel;
   int col = x - tileColPixel;
-  /*print("row col %d %d\n", row, col);*/
 
   {
     int bit = 7 - col;
@@ -673,6 +676,10 @@ uint8_t renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Co
 
     // TODO: rename val
     int val = bit1 << 1 | bit0;
+
+    if (ppu->debuggingOn && ppu->scanline == 9*8 + 2 && ppu->scanlineClockCycle <= (0+1)*8) {
+      print("[cycle %d / %d] print pixel %02x\n", ppu->scanline, ppu->scanlineClockCycle, val);
+    }
 
     /*
     struct Color color = { .red = 0, .green = 0, .blue = 0 };
@@ -715,8 +722,9 @@ void fetchyFetchy(struct PPU *ppu) {
   uint16_t coarseY = (ppu->vRegister >> 5) & 0x001F;
   uint16_t coarseX = ppu->vRegister & 0x001F;
 
-  // TODO: I don't think fineY is what I'm meant to be using to figure out the pattern table bytes, but I'm not sure
   uint8_t fineY = (ppu->vRegister >> 12) & 0x07;
+
+
 
   // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
   int attributeTableAddress = baseNametableAddress + 960;
@@ -747,25 +755,47 @@ void fetchyFetchy(struct PPU *ppu) {
   int addressOfBackgroundTile = backgroundPatternTableAddress + (indexIntoBackgroundPatternTable * 16);
   /*print("fetchyFetchy -- addressOfBackgroundTile: %04x\n", addressOfBackgroundTile);*/
 
+  // Mesen calls 'address' the PPU Addr and the addressOfBackgroundTile the 'Tile Address'
+  // mine matches theirs (ppu addr $2520, tile addr $1050)
+
   uint8_t byte1 = ppu->memory[addressOfBackgroundTile+8+fineY];
   uint8_t byte0 = ppu->memory[addressOfBackgroundTile+fineY];
+
+  if (ppu->debuggingOn && ((coarseX == 0 && coarseY == 9 && fineY == 2) || (coarseX == 1 && coarseY == 9 && fineY == 2))) {
+    print("[cycle %d / %d] [ppu addr: %04x] [tile addr: %04x] fetchy for tile Y: %d, X: %d, row %d (should render on line %d, pxs %d - %d)\n", 
+        ppu->scanline, ppu->scanlineClockCycle, address, addressOfBackgroundTile, coarseY, coarseX, fineY,
+        coarseY * 8 + fineY, coarseX * 8, coarseX * 8 + 8);
+
+    int vals[8];
+    for (int i = 0; i < 8; i++) {
+      uint8_t bit1 = (byte1 >> i) & 0x01;
+      uint8_t bit0 = (byte0 >> i) & 0x01;
+      vals[i] = bit1 << 1 | bit0;
+    }
+    print(" --> (%02x, %02x) %02x %02x %02x %02x %02x %02x %02x %02x\n", byte1, byte0, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
+  }
 
   ppu->nt = address;
   // what do we store here? there are two attribute shift registers to fill. https://forums.nesdev.com/viewtopic.php?t=10348
   // last comment here seems important: https://forums.nesdev.com/viewtopic.php?t=17568
   ppu->at = attributeByte;
-  ppu->ptTileHigh = byte0;
-  ppu->ptTileLow = byte1;
-  /*print("set ptTiles %02x %02x\n", ppu->ptTileHigh, ppu->ptTileLow);*/
-
+  ppu->ptTileHigh = byte1;
+  ppu->ptTileLow = byte0;
 }
 
 void shifterReload(struct PPU *ppu) {
+  uint16_t lowWas = ppu->patternTableShiftRegisterLow;
+  uint16_t highWas = ppu->patternTableShiftRegisterHigh;
+
   ppu->patternTableShiftRegisterLow = ppu->patternTableShiftRegisterLow & ~0x00FF;  // clear the bottom 8 bits
   ppu->patternTableShiftRegisterLow = ppu->patternTableShiftRegisterLow | (ppu->ptTileLow);
 
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh & ~0x00FF;  // clear the bottom 8 bits
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh | (ppu->ptTileHigh);
+
+  if (ppu->debuggingOn) {
+    print("shifter reload. high/low: %04x, %04x -> %04x, %04x\n", highWas, lowWas, ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow);
+  }
 
   uint8_t attributeByte = ppu->at;
 
@@ -844,6 +874,15 @@ void incrementVerticalPosition(struct PPU *ppu) {
   }
 }
 
+void performBackgroundRegisterShifts(struct PPU *ppu) {
+  // the PPU timing image on nesdev says this is when we do the register shifts
+  if ((ppu->scanlineClockCycle >= 2 && ppu->scanlineClockCycle <= 257) || 
+      (ppu->scanlineClockCycle >= 322 && ppu->scanlineClockCycle <= 337)) {
+    ppu->patternTableShiftRegisterLow = ppu->patternTableShiftRegisterLow << 1;
+    ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh << 1;
+  }
+}
+
 void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
 {
   /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
@@ -855,6 +894,8 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
         triggerNmiInterrupt(state);
       }
     }
+
+    performBackgroundRegisterShifts(ppu);
   } else if (ppu->scanline == -1) {
     // pre-render line
 
@@ -877,14 +918,15 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
       coarseXIncrement(ppu);
     }
 
+    performBackgroundRegisterShifts(ppu);
+
     if ((ppu->scanlineClockCycle - 1) > 0 && (ppu->scanlineClockCycle - 1) % 8 == 0 && (ppu->scanlineClockCycle <= 257 || ppu->scanlineClockCycle >= 329)) {
       shifterReload(ppu);
     }
   } else if (ppu->scanline >= 0 && ppu->scanline <= 239) {
     // visible scanlines
 
-    // the wiki suggests cycle 0 is idle and we go from 1 to 256
-    if (ppu->scanlineClockCycle >= 1 && ppu->scanlineClockCycle <= 256) {
+    if (ppu->scanlineClockCycle >= 2 && ppu->scanlineClockCycle <= 257) {
       uint8_t backgroundVal = renderBackgroundPixel2(ppu, state, palette);
       renderSpritePixel(ppu, state, palette, backgroundVal);
     } // end of conditional for visible clock cycle
@@ -903,16 +945,11 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
       coarseXIncrement(ppu);
     }
 
+    performBackgroundRegisterShifts(ppu);
+
     if ((ppu->scanlineClockCycle - 1) > 0 && (ppu->scanlineClockCycle - 1) % 8 == 0 && (ppu->scanlineClockCycle <= 257 || ppu->scanlineClockCycle >= 329)) {
       shifterReload(ppu);
     }
-  }
-
-  // the PPU timing image on nesdev says this is when we do the register shifts
-  if ((ppu->scanlineClockCycle >= 2 && ppu->scanlineClockCycle <= 257) &&
-      (ppu->scanlineClockCycle <= 322 && ppu->scanlineClockCycle <= 337)) {
-    ppu->patternTableShiftRegisterLow = ppu->patternTableShiftRegisterLow << 1;
-    ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh << 1;
   }
 
   ppu->scanlineClockCycle++;
@@ -924,6 +961,7 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette)
     }
   }
 }
+
 
 
 
@@ -1188,9 +1226,11 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             break;
           case 0x34: // 4
             state.debuggingOn = true;
+            ppu.debuggingOn = true;
             break;
           case 0x35: // 5
             state.debuggingOn = false;
+            ppu.debuggingOn = false;
             break;
         }
       }
@@ -1240,7 +1280,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       int64_t perfCount = endPerfCount.QuadPart - lastPerfCount.QuadPart;
       double milliseconds = (1000.0f*(double)perfCount) / (double)perfFrequency;
       double framesPerSecond = (double)perfFrequency / (double)perfCount;
-      print("# of milliseconds for frame: %f  (frames per second: %f)\n", milliseconds, framesPerSecond);
+      if (state.debuggingOn) {
+        print("# of milliseconds for frame: %f  (frames per second: %f)\n", milliseconds, framesPerSecond);
+      }
 
       lastPerfCount = endPerfCount;
     }

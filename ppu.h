@@ -33,6 +33,8 @@ struct PPU
 
   int scanlineClockCycle;  // 0 to 340
   int scanline; // 262 per frame; each lasts for 341 PPU clock cycles; -1 to 260
+
+  bool debuggingOn;
 };
 
 struct PPUClosure
