@@ -152,24 +152,35 @@ void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) 
   ReleaseDC(windowHandle, deviceContext);
 }
 
-void setPPUData(unsigned char value, struct PPU *ppu, int inc) 
+void setPPUData(unsigned char value, struct PPU *ppu, int inc, struct Computer *state) 
 {
-  /*print("setPPUData. Set addr %04x to %02x (then increment by %d)\n", ppu->ppuAddr, value, inc);*/
-
   if (ppu->vRegister > 0x3FFF) {
     print("trying to write out of ppu bounds!\n");
   } else {
+    if (ppu->debuggingOn && ppu->vRegister == 0x3F00) {
+      print("writing %02x to $3F00; cpu pc: %d\n", value, state->pc);
+    }
     ppu->memory[ppu->vRegister] = value;
+
+    // TODO: consider implementing these mirrors as a read, not a write
+    // Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+    if (ppu->vRegister >= 0x3F10 && ppu->vRegister <= 0x3F1C && ppu->vRegister % 4 == 0) {
+      ppu->memory[ppu->vRegister - 0x0010] = value;
+    }
   }
 
+  /*
   uint16_t iWas = ppu->vRegister;
   char was[17] = "";
   char is[17] = "";
   sprintBitsUint16(was, ppu->vRegister);
+  */
 
   ppu->vRegister = ppu->vRegister + inc;
+  /* 
   sprintBitsUint16(is, ppu->vRegister);
   uint16_t iIs = ppu->vRegister;
+  */
   /*print("(setPPUData) v was %s (%04x), is %s (%04x); value set to %02x\n", was, iWas, is, iIs, value);*/
 }
 
@@ -258,7 +269,7 @@ bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     ppu->wRegister = !ppu->wRegister;
     shouldWriteMemory = false;
   } else if (memoryAddress == 0x2007) {
-    setPPUData(value, ppu, vramIncrement(ppu));
+    setPPUData(value, ppu, vramIncrement(ppu), state);
     shouldWriteMemory = false;
   } else if (memoryAddress == 0x2001) {
     uint8_t before = ppu->mask;
@@ -584,20 +595,23 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   uint8_t paletteNumber = ppu->paletteNumber;
   uint8_t colorIndex = universalBackgroundColor;
   if (val > 0) {
-    colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
+    colorIndex = ppu->memory[0x3F00 + 4*paletteNumber + val];
   }
   struct Color color = palette[colorIndex];
 
-  uint16_t tmpPalAddr = 0x3F01 + 4*paletteNumber + val - 1;
+  uint16_t tmpPalAddr = 0x3F00 + 4*paletteNumber + val;
 
   // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8, tile 16 starts at 16*8
   if (ppu->debuggingOn && ppu->scanline == 16*8 + 0 && ppu->scanlineClockCycle <= 19) {
-    print("[cycle %d / %d] [fineX: %d] [pal addr %04x], print pixel %02x\n", ppu->scanline, ppu->scanlineClockCycle, fineX, tmpPalAddr, val);
+    print("[cycle %d / %d] [fineX: %d] [pal addr %04x, color index %02x] print pixel %02x\n", 
+        ppu->scanline, ppu->scanlineClockCycle, fineX, tmpPalAddr, colorIndex, val);
     char high[17] = "";
     char low[17] = "";
     sprintBitsUint16(high, ppu->patternTableShiftRegisterHigh);
     sprintBitsUint16(low, ppu->patternTableShiftRegisterLow);
     print("  --> using shift regs high: %s, low: %s\n", high, low);
+    print("  --> ppu mem $3F00 onwards: %02x %02x %02x %02x %02x %02x\n", 
+        ppu->memory[0x3F00], ppu->memory[0x3F01], ppu->memory[0x3F02], ppu->memory[0x3F03], ppu->memory[0x3F04], ppu->memory[0x3F05]);
   }
 
   /*
@@ -813,10 +827,12 @@ void shifterReload(struct PPU *ppu) {
   // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
   ppu->paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
 
+  /*
   if (ppu->debuggingOn) {
     print("shifter reload. high/low: %04x, %04x -> %04x, %04x\n", highWas, lowWas, ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow);
     print("  -> paletteNumber: %02x\n", ppu->paletteNumber);
   }
+  */
 
   /*ppu->attributeTableShiftRegisterHigh*/
   /*ppu->attributeTableShiftRegisterLow*/
