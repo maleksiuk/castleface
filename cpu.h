@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include "ppu.h"
+#include "controller.h"
 
 struct Computer 
 { 

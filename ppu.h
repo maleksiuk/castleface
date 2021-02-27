@@ -2,6 +2,18 @@
 #define FILE_PPU_H_SEEN
 
 #include <stdint.h>
+#include <stdbool.h>
+
+#define VIDEO_BUFFER_WIDTH 256
+#define VIDEO_BUFFER_HEIGHT 240
+#define STARTING_PIXEL 2
+
+struct Color 
+{
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+};
 
 // https://wiki.nesdev.com/w/index.php/PPU_memory_map
 struct PPU
@@ -33,6 +45,8 @@ struct PPU
   int scanlineClockCycle;  // 0 to 340
   int scanline; // 262 per frame; each lasts for 341 PPU clock cycles; -1 to 260
 
+  int mapperNumber;
+
   bool debuggingOn;
 };
 
@@ -42,5 +56,7 @@ struct PPUClosure
   bool (*onMemoryWrite)(unsigned int memoryAddress, unsigned char value, struct Computer *state);
   unsigned char (*onMemoryRead)(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride);
 };
+
+
 
 #endif /* !FILE_PPU_H_SEEN */

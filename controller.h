@@ -1,5 +1,5 @@
-#ifndef FILE_WINPLAY_H_SEEN
-#define FILE_WINPLAY_H_SEEN
+#ifndef FILE_CONTROLLER_H_SEEN
+#define FILE_CONTROLLER_H_SEEN
 
 #include <stdbool.h>
 
