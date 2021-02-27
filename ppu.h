@@ -16,11 +16,10 @@ struct PPU
 
   uint16_t patternTableShiftRegisterLow;
   uint16_t patternTableShiftRegisterHigh;
-  uint8_t attributeTableShiftRegisterHigh;
-  uint8_t attributeTableShiftRegisterLow;
-  uint8_t paletteNumber;  // TODO: temporary
+  uint8_t paletteNumberFirst;
+  uint8_t paletteNumberSecond;
 
-  uint8_t nt;
+  uint16_t nt;
   uint8_t at;
   uint8_t ptTileLow;
   uint8_t ptTileHigh;

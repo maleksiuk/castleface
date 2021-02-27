@@ -413,7 +413,6 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
     struct PPU *ppu = state->ppuClosure->ppu;
     /*print("READING 0x2007 *************************\n\n");*/
     ppu->vRegister = ppu->vRegister + vramIncrement(ppu);
-    print("(0x2007 read) incremented vRegister to %04x\n", ppu->vRegister);
   } else if (memoryAddress == 0x4016) {
     /*print("*********** read from 0x4016 (val is %02x)\n", state->memory[0x4016]);*/
     *shouldOverride = true;
@@ -592,7 +591,7 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   /*$3F05-$3F07 	Background palette 1*/
   /*$3F09-$3F0B 	Background palette 2*/
   /*$3F0D-$3F0F 	Background palette 3 */
-  uint8_t paletteNumber = ppu->paletteNumber;
+  uint8_t paletteNumber = ppu->paletteNumberFirst;
   uint8_t colorIndex = universalBackgroundColor;
   if (val > 0) {
     colorIndex = ppu->memory[0x3F00 + 4*paletteNumber + val];
@@ -602,9 +601,12 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
   uint16_t tmpPalAddr = 0x3F00 + 4*paletteNumber + val;
 
   // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8, tile 16 starts at 16*8
-  if (ppu->debuggingOn && ppu->scanline == 16*8 + 0 && ppu->scanlineClockCycle <= 19) {
-    print("[cycle %d / %d] [fineX: %d] [pal addr %04x, color index %02x] print pixel %02x\n", 
-        ppu->scanline, ppu->scanlineClockCycle, fineX, tmpPalAddr, colorIndex, val);
+  int debugTileX = 17;
+  int debugTileY = 13;
+  int debugFineY = 2;
+  if (ppu->debuggingOn && ppu->scanline == debugTileY*8 + debugFineY && ppu->scanlineClockCycle >= debugTileX*8+STARTING_PIXEL && ppu->scanlineClockCycle <= debugTileX*8+8+STARTING_PIXEL) {
+    print("[cycle %d / %d] [fineX: %d] [pal addr %04x, color index %02x, palnum %d] print pixel %02x\n", 
+        ppu->scanline, ppu->scanlineClockCycle, fineX, tmpPalAddr, colorIndex, paletteNumber, val);
     char high[17] = "";
     char low[17] = "";
     sprintBitsUint16(high, ppu->patternTableShiftRegisterHigh);
@@ -698,18 +700,6 @@ uint8_t renderBackgroundPixel(struct PPU *ppu, struct Computer *state, struct Co
       print("[cycle %d / %d] print pixel %02x\n", ppu->scanline, ppu->scanlineClockCycle, val);
     }
 
-    /*
-    struct Color color = { .red = 0, .green = 0, .blue = 0 };
-    if (val == 0) {
-    } else if (val == 1) {
-      color.red = 0xFF;
-    } else if (val == 2) {
-      color.green = 0xFF;
-    } else {
-      color.blue = 0xFF;
-    }
-    */
-
     /*$3F00 	Universal background color*/
     /*$3F01-$3F03 	Background palette 0*/
     /*$3F05-$3F07 	Background palette 1*/
@@ -741,8 +731,6 @@ void fetchyFetchy(struct PPU *ppu) {
 
   uint8_t fineY = (ppu->vRegister >> 12) & 0x07;
 
-
-
   // attribute table is 64 bytes of goodness (8 x 8; each of these blocks is made of up 4 x 4 tiles)
   int attributeTableAddress = baseNametableAddress + 960;
 
@@ -751,16 +739,6 @@ void fetchyFetchy(struct PPU *ppu) {
   int attributeBlockCol = coarseX / 4;  // 0 to 7
   const uint16_t attributeAddress = attributeTableAddress + (8 * attributeBlockRow + attributeBlockCol);
   uint8_t attributeByte = ppu->memory[attributeAddress];
-
-  /*
-  // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
-  uint8_t quadrantX = (coarseX - attributeBlockCol*4) / 2;
-  uint8_t quadrantY = (coarseY - attributeBlockRow*4) / 2;
-  uint8_t quadrantNumber = quadrantY << 1 | quadrantX;
-
-  // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
-  uint8_t paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
-  */
 
   // 0: $0000; 1: $1000
   uint8_t backgroundPatternTableAddressCode = (ppu->control & 0x10) >> 4;
@@ -779,7 +757,7 @@ void fetchyFetchy(struct PPU *ppu) {
   uint8_t byte1 = ppu->memory[addressOfBackgroundTile+8+fineY];
   uint8_t byte0 = ppu->memory[addressOfBackgroundTile+fineY];
 
-  if (ppu->debuggingOn && ((coarseX == 0 && coarseY == 16 && fineY == 0) || (coarseX == 1 && coarseY == 16 && fineY == 0))) {
+  if (ppu->debuggingOn && (coarseX == 17 && coarseY == 13 && fineY == 2)) {
     print("[cycle %d / %d] [ppu addr: %04x] [tile addr: %04x] [attr addr: %04x] [attr byte: %02x] fetchy for tile Y: %d, X: %d, row %d (should render on line %d, pxs %d - %d)\n", 
         ppu->scanline, ppu->scanlineClockCycle, address, addressOfBackgroundTile, attributeAddress, attributeByte, coarseY, coarseX, fineY,
         coarseY * 8 + fineY, coarseX * 8, coarseX * 8 + 8);
@@ -794,8 +772,6 @@ void fetchyFetchy(struct PPU *ppu) {
   }
 
   ppu->nt = address;
-  // what do we store here? there are two attribute shift registers to fill. https://forums.nesdev.com/viewtopic.php?t=10348
-  // last comment here seems important: https://forums.nesdev.com/viewtopic.php?t=17568
   ppu->at = attributeByte;
   ppu->ptTileHigh = byte1;
   ppu->ptTileLow = byte0;
@@ -811,31 +787,18 @@ void shifterReload(struct PPU *ppu) {
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh & ~0x00FF;  // clear the bottom 8 bits
   ppu->patternTableShiftRegisterHigh = ppu->patternTableShiftRegisterHigh | (ppu->ptTileHigh);
 
-
   uint8_t attributeByte = ppu->at;
 
-  // TODO: make sure I understand this
-  uint8_t quadrantX = ppu->nt & 0x02 == 0x02;
-  uint8_t quadrantY = ppu->nt & 0x40 == 0x40;
-  /*print("quadX: %d, quadY: %d\n", quadrantX, quadrantY);*/
+  uint8_t quadrantX = (ppu->nt & 0x02) == 0x02;
+  uint8_t quadrantY = (ppu->nt & 0x40) == 0x40;
 
   // each attribute block is split into four quadrants; each quadrant is 2x2 tiles
-  /*uint8_t quadrantX = (coarseX - attributeBlockCol*4) / 2;*/
-  /*uint8_t quadrantY = (coarseY - attributeBlockRow*4) / 2;*/
   uint8_t quadrantNumber = quadrantY << 1 | quadrantX;
 
+  ppu->paletteNumberFirst = ppu->paletteNumberSecond;
+
   // attribute byte might be something like 00 10 00 10; each pair of bits representing quads 3, 2, 1, 0 respectively
-  ppu->paletteNumber = (attributeByte >> quadrantNumber*2) & 0x03;
-
-  /*
-  if (ppu->debuggingOn) {
-    print("shifter reload. high/low: %04x, %04x -> %04x, %04x\n", highWas, lowWas, ppu->patternTableShiftRegisterHigh, ppu->patternTableShiftRegisterLow);
-    print("  -> paletteNumber: %02x\n", ppu->paletteNumber);
-  }
-  */
-
-  /*ppu->attributeTableShiftRegisterHigh*/
-  /*ppu->attributeTableShiftRegisterLow*/
+  ppu->paletteNumberSecond = (attributeByte >> quadrantNumber*2) & 0x03;
 }
 
 // This x-increment code taken from http://wiki.nesdev.com/w/index.php/PPU_scrolling#Wrapping_around
