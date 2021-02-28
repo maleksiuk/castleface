@@ -15,11 +15,25 @@ struct Color
   uint8_t blue;
 };
 
+struct Sprite
+{
+  uint8_t yPosition;
+  uint8_t tileIndex;
+  uint8_t attributes;
+  uint8_t xPosition;
+  uint8_t spriteIndex;
+};
+
 // https://wiki.nesdev.com/w/index.php/PPU_memory_map
 struct PPU
 { 
   unsigned char *memory;
   uint8_t *oam; // 256 bytes (64 sprite info chunks, 4 bytes each)
+
+  struct Sprite sprites0[8];
+  struct Sprite sprites1[8];
+  struct Sprite *sprites;
+  struct Sprite *followingSprites;
 
   uint16_t vRegister;  // current vram address; 15 bits
   uint16_t tRegister;  // temporary vram address; 15 bits

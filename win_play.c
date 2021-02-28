@@ -250,6 +250,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   // TODO: might as well just read chrRom right into ppuMemory, right?
   memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
   struct PPU ppu = { .memory = ppuMemory, .oam = oam, .scanline = -1, .mapperNumber = mapperNumber };   // TODO: make a struct initializer
+  ppu.sprites = ppu.sprites0;
+  ppu.followingSprites = ppu.sprites1;
   ppu.wRegister = false;
 
   // colours from http://www.thealmightyguru.com/Games/Hacking/Wiki/index.php/NES_Palette

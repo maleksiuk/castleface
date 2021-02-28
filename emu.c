@@ -264,7 +264,8 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
   return 0;
 }
 
-int vramIncrement(struct PPU *ppu) {
+int vramIncrement(struct PPU *ppu) 
+{
   if (ppu->control >> 2 & 0x01 == 1) {
     return 32;
   } else {
@@ -272,7 +273,36 @@ int vramIncrement(struct PPU *ppu) {
   }
 }
 
-void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *palette, uint8_t backgroundVal, void *videoBuffer) {
+// runs on scanlines 0 to 239; I believe a game programmer has to set their y to 0 w/ an understanding it'll render at y = 1
+void spriteEvaluation(struct PPU *ppu) 
+{
+  int y = ppu->scanline;
+
+  memset(ppu->followingSprites, 0xFF, 8 * sizeof(ppu->followingSprites[0]));
+
+  int curSpriteNum = 0;
+
+  // search through the 64 sprites to see if any affect us
+  for (int i = 0; i < 256; i+=4) {
+    uint8_t ypos = ppu->oam[i];
+    uint8_t yStart = ypos;
+    uint8_t yEnd = ypos + 8;
+
+    if (yStart <= y && y < yEnd) {
+      if (curSpriteNum < 8) { 
+        ppu->followingSprites[curSpriteNum] = (struct Sprite) { .yPosition = ypos, .xPosition = ppu->oam[i+3], 
+          .tileIndex = ppu->oam[i+1], .attributes = ppu->oam[i+2], .spriteIndex = i / 4 };
+      } else {
+        // TODO: set sprite overflow
+      }
+
+      curSpriteNum++;
+    }
+  }
+}
+
+void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *palette, uint8_t backgroundVal, void *videoBuffer) 
+{
   unsigned char control = ppu->control;
 
   int spritePatternTableAddress = 0x0000;
@@ -285,48 +315,39 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
   int pixelX = ppu->scanlineClockCycle - STARTING_PIXEL;
   int pixelY = ppu->scanline;
 
-  // search through the 64 sprites to see if any affect us
-  for (int i = 0; i < 256; i+=4) {
-    bool isSpriteZero = (i == 0);
-    uint8_t ypos = ppu->oam[i];
-    uint8_t xpos = ppu->oam[i+3];
-
-    // TODO: find docs on this. I'm seeing tons of ypos FF and xpos 0 sprites which I guess are 'empty'?
-    // I think the docs are here: 'hide a sprite...' https://wiki.nesdev.com/w/index.php/PPU_OAM
-    if (ypos > 240-8) {
-      continue;
+  for (int i = 0; i < 8; i++) {
+    struct Sprite sprite = ppu->sprites[i];
+    if (sprite.yPosition == 0xFF) {
+      return;
     }
 
+    uint8_t xpos = sprite.xPosition;
     uint8_t xStart = xpos;
     uint8_t xEnd = xpos + 8;
-    uint8_t yStart = ypos;
-    uint8_t yEnd = ypos + 8;
 
-    if (xStart <= pixelX && pixelX < xEnd && yStart <= pixelY && pixelY < yEnd) {
+    if (xStart <= pixelX && pixelX < xEnd) {
       // render pixel at pixelX, pixelY
-      uint8_t tileIndex = ppu->oam[i+1];
-      uint8_t attributes = ppu->oam[i+2];
+      uint8_t tileIndex = sprite.tileIndex;
+      uint8_t attributes = sprite.attributes;
+      bool isSpriteZero = sprite.spriteIndex == 0;
 
       bool flipHorizontally = attributes & 0x40;
 
-
       // 16 because the pattern table comes in 16 byte chunks 
       int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
-      uint8_t *sprite = &ppu->memory[addressOfSprite];
+      uint8_t *spriteData = &ppu->memory[addressOfSprite];
 
       uint32_t *videoBufferRow = (uint32_t *)videoBuffer;
       videoBufferRow += (pixelY * VIDEO_BUFFER_WIDTH) + pixelX;
 
       {
         // find out which row of the 8x8 sprite is relevant for us
-        int rowOfSprite = pixelY - ypos;
+        int rowOfSprite = pixelY - 1 - sprite.yPosition;
 
-        uint8_t lowByte = sprite[rowOfSprite];
-        uint8_t highByte = sprite[rowOfSprite+8];
+        uint8_t lowByte = spriteData[rowOfSprite];
+        uint8_t highByte = spriteData[rowOfSprite+8];
 
         uint32_t *pixel = videoBufferRow;
-
-        int pixelIncrement = 1;
 
         int colOfSprite = pixelX - xpos;
         if (flipHorizontally) {
@@ -339,14 +360,13 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
         int val = bit1 << 1 | bit0;
 
         if (val > 0) {
-
           // TODO: there are other conditions to handle http://wiki.nesdev.com/w/index.php/PPU_OAM#Sprite_zero_hits
           if (isSpriteZero && backgroundVal > 0) {
             ppu->status = ppu->status | 0x40;  // sprite zero hit!
           }
 
           int paletteNumber = (attributes & 0x03) + 4;
-          uint8_t colorIndex = ppu->memory[0x3F01 + 4*paletteNumber + val - 1];
+          uint8_t colorIndex = ppu->memory[0x3F00 + 4*paletteNumber + val];
           struct Color color = palette[colorIndex];
           *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
         }
@@ -580,7 +600,6 @@ void performBackgroundRegisterShifts(struct PPU *ppu) {
 
 void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette, void *videoBuffer)
 {
-  /*print("ppuTick. scanline: %d  cycle: %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   if (ppu->scanline >= 241) {  // vblank
     if (ppu->scanline == 241 && ppu->scanlineClockCycle == 1) {
       /*print("VBLANK START\n");*/
@@ -598,6 +617,11 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette, voi
       /*print("VBLANK END\n");*/
       ppu->status = ppu->status & ~0x80; // clear vblank flag
       ppu->status = ppu->status & ~0x40; // clear sprite 0 hit flag
+
+      // clear the sprites; these will be set starting on scanline 0 (for rendering beginning on scanline 1)
+      memset(ppu->sprites0, 0xFF, sizeof ppu->sprites0);
+      memset(ppu->sprites1, 0xFF, sizeof ppu->sprites1);
+
     } if (ppu->scanlineClockCycle == 256) {
       incrementVerticalPosition(ppu);
     } else if (ppu->scanlineClockCycle == 257) {
@@ -621,9 +645,17 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette, voi
   } else if (ppu->scanline >= 0 && ppu->scanline <= 239) {
     // visible scanlines
 
+    if (ppu->scanlineClockCycle == 0) {
+      struct Sprite *tmp = ppu->sprites;
+      ppu->sprites = ppu->followingSprites;
+      ppu->followingSprites = tmp;
+    }
+
     if (ppu->scanlineClockCycle >= STARTING_PIXEL && ppu->scanlineClockCycle < VIDEO_BUFFER_WIDTH + STARTING_PIXEL) {
       uint8_t backgroundVal = renderBackgroundPixel2(ppu, state, palette, videoBuffer);
-      renderSpritePixel(ppu, state, palette, backgroundVal, videoBuffer);
+      if (ppu->scanline > 0) {
+        renderSpritePixel(ppu, state, palette, backgroundVal, videoBuffer);
+      }
     } // end of conditional for visible clock cycle
 
     if (ppu->scanlineClockCycle == 256) {
@@ -644,6 +676,10 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette, voi
 
     if ((ppu->scanlineClockCycle - 1) > 0 && (ppu->scanlineClockCycle - 1) % 8 == 0 && (ppu->scanlineClockCycle <= 257 || ppu->scanlineClockCycle >= 329)) {
       shifterReload(ppu);
+    }
+
+    if (ppu->scanlineClockCycle == 65) {
+      spriteEvaluation(ppu);
     }
   }
 
