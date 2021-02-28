@@ -44,29 +44,16 @@ bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
        t: .FEDCBA ........ = d: ..FEDCBA
        t: X...... ........ = 0
       */
-      char was[17] = "";
-      char is[17] = "";
-      sprintBitsUint16(was, ppu->tRegister);
-
       uint8_t firstSixBits = value & 0x3F;
       ppu->tRegister = ppu->tRegister & ~0xFF00; // clear the last 8 bits
       ppu->tRegister = ppu->tRegister | (firstSixBits << 8);
-
-      sprintBitsUint16(is, ppu->tRegister);
-      /*print("[0x2006 1st write] [val = %s] t from %s to %s\n", val, was, is);*/
     } else {  // second write
       /*
        t: ....... HGFEDCBA = d: HGFEDCBA
        v                   = t
       */
-      char was[17] = "";
-      char is[17] = "";
-      sprintBitsUint16(was, ppu->tRegister);
-
       ppu->tRegister = ppu->tRegister & ~0x00FF; // clear the first 8 bits
       ppu->tRegister = ppu->tRegister | value; 
-      sprintBitsUint16(is, ppu->tRegister);
-      /*print("[0x2006 2nd write] [val = %s] t from %s to %s\n", val, was, is);*/
       ppu->vRegister = ppu->tRegister; 
     }
 
@@ -76,16 +63,6 @@ bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     setPPUData(value, ppu, vramIncrement(ppu), state);
     shouldWriteMemory = false;
   } else if (memoryAddress == 0x2001) {
-    uint8_t before = ppu->mask;
-    uint8_t after = value;
-    uint8_t visibilityBefore = (before & 0x18) >> 3;
-    uint8_t visibilityAfter = (after & 0x18) >> 3;
-
-    /*
-    if (visibilityBefore != visibilityAfter) {
-      print("MASK! %02x => %02x\n", visibilityBefore, visibilityAfter);
-    }
-    */
     ppu->mask = value;
     shouldWriteMemory = false;
   } else if (memoryAddress == 0x2000) {  // PPUCTRL
@@ -310,14 +287,14 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
   int pixelX = ppu->scanlineClockCycle - STARTING_PIXEL;
   int pixelY = ppu->scanline;
 
+  bool showSpriteInLeft8Pixels = ppu->mask & 0x04;
+  if (!showSpriteInLeft8Pixels && pixelX < 8) {
+    return;
+  }
+
   for (int i = 0; i < 8; i++) {
     struct Sprite sprite = ppu->sprites[i];
     if (sprite.yPosition == 0xFF) {
-      return;
-    }
-
-    bool spriteBehindBackground = (sprite.attributes >> 5) & 0x01;
-    if (spriteBehindBackground && backgroundVal != 0) {
       return;
     }
 
@@ -365,19 +342,31 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
         if (val > 0) {
           // TODO: there are other conditions to handle http://wiki.nesdev.com/w/index.php/PPU_OAM#Sprite_zero_hits
           bool isSpriteZero = sprite.spriteIndex == 0;
-          if (isSpriteZero && backgroundVal > 0) {
+
+          // TODO: I think we shouldn't even be calling our render methods if backgrounds/sprites are off. I'm putting
+          // these here to get spriteZero tests passing. I'll move logic out later.
+          bool showBackground = ppu->mask & 0x08;
+          bool showBackgroundInLeft8Pixels = ppu->mask & 0x02;
+          bool showSprite = ppu->mask & 0x10;
+          if (isSpriteZero && backgroundVal > 0 && showBackground && showSprite && (showBackgroundInLeft8Pixels || pixelX >= 8) && pixelX != 255) {
+            print("sprite zero hit -- %02x\n", ppu->mask);
             ppu->status = ppu->status | 0x40;  // sprite zero hit!
+          }
+
+          bool spriteBehindBackground = (sprite.attributes >> 5) & 0x01;
+          if (spriteBehindBackground && backgroundVal != 0) {
+            return;
           }
 
           int paletteNumber = (attributes & 0x03) + 4;
           uint8_t colorIndex = ppu->memory[0x3F00 + 4*paletteNumber + val];
           struct Color color = palette[colorIndex];
           *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
+
+          // only draw the first sprite we find 
+          return;
         }
       }
-      
-      // TODO: I think we may want to return out of this function here due to sprite priority (only draw first one)
-      // (I tried this and Megaman's mouth goes away on the title screen, so I'll need to figure that out.)
     }
   }
 }

@@ -166,6 +166,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   /*file = fopen("donkey_kong.nes", "rb");*/
   /*file = fopen("Excitebike.nes", "rb");*/
   file = fopen("MegaMan2.nes", "rb");
+  /*file = fopen("01-basics.nes", "rb");*/
+  /*file = fopen("06-right_edge.nes", "rb");*/
 
   fread(header, sizeof(header), 1, file);
 
@@ -323,9 +325,15 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   if (mapperNumber == 0) {
     state.prgRomBlock1 = &memory[0x8000];
     state.prgRomBlock2 = &memory[0xA000];
-    // for NROM the second 16 kB is a mirror of the first 16 kB
-    state.prgRomBlock3 = &memory[0x8000];
-    state.prgRomBlock4 = &memory[0xA000];
+    if (sizeOfPrgRomInBytes == 0x8000) {
+      // NROM-256
+      state.prgRomBlock3 = &memory[0xC000];
+      state.prgRomBlock4 = &memory[0xE000];
+    } else {
+      // for NROM-128 the second 16 kB is a mirror of the first 16 kB
+      state.prgRomBlock3 = &memory[0x8000];
+      state.prgRomBlock4 = &memory[0xA000];
+    }
   } else if (mapperNumber == 1) {
     // For mapper 1 it seems to be important to start off with the last 16 kB bank in 0xC000 - 0xFFFF
     state.prgRomBlock1 = &memory[0x8000];
