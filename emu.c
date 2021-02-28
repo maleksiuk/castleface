@@ -310,14 +310,17 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
     spritePatternTableAddress = 0x1000;
   }
 
-  // find which pixel we're working on, see if that matches a sprite, and then figure out what to render there if it does.
-
   int pixelX = ppu->scanlineClockCycle - STARTING_PIXEL;
   int pixelY = ppu->scanline;
 
   for (int i = 0; i < 8; i++) {
     struct Sprite sprite = ppu->sprites[i];
     if (sprite.yPosition == 0xFF) {
+      return;
+    }
+
+    bool spriteBehindBackground = (sprite.attributes >> 5) & 0x01;
+    if (spriteBehindBackground && backgroundVal != 0) {
       return;
     }
 
@@ -373,6 +376,7 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
       }
       
       // TODO: I think we may want to return out of this function here due to sprite priority (only draw first one)
+      // (I tried this and Megaman's mouth goes away on the title screen, so I'll need to figure that out.)
     }
   }
 }
