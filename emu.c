@@ -9,9 +9,6 @@ void setPPUData(unsigned char value, struct PPU *ppu, int inc, struct Computer *
   if (ppu->vRegister > 0x3FFF) {
     print("trying to write out of ppu bounds!\n");
   } else {
-    if (ppu->debuggingOn && ppu->vRegister == 0x3F00) {
-      print("writing %02x to $3F00; cpu pc: %d\n", value, state->pc);
-    }
     ppu->memory[ppu->vRegister] = value;
 
     // TODO: consider implementing these mirrors as a read, not a write
@@ -332,9 +329,9 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
       // render pixel at pixelX, pixelY
       uint8_t tileIndex = sprite.tileIndex;
       uint8_t attributes = sprite.attributes;
-      bool isSpriteZero = sprite.spriteIndex == 0;
 
       bool flipHorizontally = attributes & 0x40;
+      bool flipVertically = attributes & 0x80;
 
       // 16 because the pattern table comes in 16 byte chunks 
       int addressOfSprite = spritePatternTableAddress + (tileIndex * 16);
@@ -346,16 +343,19 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
       {
         // find out which row of the 8x8 sprite is relevant for us
         int rowOfSprite = pixelY - 1 - sprite.yPosition;
-
-        uint8_t lowByte = spriteData[rowOfSprite];
-        uint8_t highByte = spriteData[rowOfSprite+8];
-
-        uint32_t *pixel = videoBufferRow;
+        if (flipVertically) {
+          rowOfSprite = 7 - rowOfSprite;
+        }
 
         int colOfSprite = pixelX - xpos;
         if (flipHorizontally) {
           colOfSprite = 7 - colOfSprite;
         }
+
+        uint8_t lowByte = spriteData[rowOfSprite];
+        uint8_t highByte = spriteData[rowOfSprite+8];
+
+        uint32_t *pixel = videoBufferRow;
 
         int bitNumber = 7 - colOfSprite;
         uint8_t bit1 = (highByte >> bitNumber) & 0x01;
@@ -364,6 +364,7 @@ void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *pa
 
         if (val > 0) {
           // TODO: there are other conditions to handle http://wiki.nesdev.com/w/index.php/PPU_OAM#Sprite_zero_hits
+          bool isSpriteZero = sprite.spriteIndex == 0;
           if (isSpriteZero && backgroundVal > 0) {
             ppu->status = ppu->status | 0x40;  // sprite zero hit!
           }
@@ -431,6 +432,7 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
 
   uint16_t tmpPalAddr = 0x3F00 + 4*paletteNumber + val;
 
+  /*
   // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8, tile 16 starts at 16*8
   int debugTileX = 17;
   int debugTileY = 13;
@@ -446,6 +448,7 @@ uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct C
     print("  --> ppu mem $3F00 onwards: %02x %02x %02x %02x %02x %02x\n", 
         ppu->memory[0x3F00], ppu->memory[0x3F01], ppu->memory[0x3F02], ppu->memory[0x3F03], ppu->memory[0x3F04], ppu->memory[0x3F05]);
   }
+  */
 
   *pixel = ((color.red << 16) | (color.green << 8) | color.blue);
   return val;
@@ -491,6 +494,7 @@ void fetchyFetchy(struct PPU *ppu) {
   uint8_t byte1 = ppu->memory[addressOfBackgroundTile+8+fineY];
   uint8_t byte0 = ppu->memory[addressOfBackgroundTile+fineY];
 
+  /*
   if (ppu->debuggingOn && (coarseX == 17 && coarseY == 13 && fineY == 2)) {
     print("[cycle %d / %d] [ppu addr: %04x] [tile addr: %04x] [attr addr: %04x] [attr byte: %02x] fetchy for tile Y: %d, X: %d, row %d (should render on line %d, pxs %d - %d)\n", 
         ppu->scanline, ppu->scanlineClockCycle, address, addressOfBackgroundTile, attributeAddress, attributeByte, coarseY, coarseX, fineY,
@@ -504,6 +508,7 @@ void fetchyFetchy(struct PPU *ppu) {
     }
     print(" --> (%02x, %02x) %02x %02x %02x %02x %02x %02x %02x %02x\n", byte1, byte0, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]);
   }
+  */
 
   ppu->nt = address;
   ppu->at = attributeByte;

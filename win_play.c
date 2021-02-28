@@ -414,7 +414,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
       if (millisecondsElapsed < 16) {
         DWORD sleepTime = (16 - (DWORD)millisecondsElapsed);
-        print("sleep for %d milliseconds\n", sleepTime);
+        if (state.debuggingOn) {
+          print("sleep for %d milliseconds\n", sleepTime);
+        }
         Sleep(sleepTime);
 
         // TODO: Consider adding what Casey does in Handmade Hero: a loop to kill time if the sleep isn't
