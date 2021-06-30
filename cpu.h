@@ -2,8 +2,10 @@
 #define FILE_CPU_H_SEEN
 
 #include <stdbool.h>
-#include "ppu.h"
-#include "controller.h"
+#include <stdint.h>
+
+struct PPUClosure;
+struct KeyboardInput;
 
 struct Computer 
 { 
@@ -58,5 +60,6 @@ void triggerIrqInterrupt(struct Computer *state);
 void fireIrqInterrupt(struct Computer *state);
 void triggerNmiInterrupt(struct Computer *state);
 void fireNmiInterrupt(struct Computer *state);
+unsigned char readMemory(unsigned int memoryAddress, struct Computer *state);
 
 #endif /* !FILE_CPU_H_SEEN */

@@ -17,7 +17,26 @@ import AppKit
 
 print("Hello, World!")
 
+// TODO: this is duplicated in ppu.h
+let videoBufferWidth = 256
+let videoBufferHeight = 240
+
 var running = true
+
+let videoBufferSize = videoBufferWidth * videoBufferHeight * 4
+var videoBuffer = [UInt8](repeating: 0, count: videoBufferSize)
+videoBuffer.reserveCapacity(videoBufferSize)
+
+// https://developer.apple.com/documentation/swift/unsafemutablepointer
+
+let uint8Pointer = UnsafeMutablePointer<UInt8>.allocate(capacity: videoBufferSize)
+uint8Pointer.initialize(from: &videoBuffer, count: videoBufferSize)
+
+justForTesting(uint8Pointer)
+
+//var computer = Computer.init()
+
+//executeEmulatorCycle()
 
 class MainWindowDelegate : NSObject, NSWindowDelegate {
     
@@ -30,7 +49,7 @@ let contentRect = NSRect.init(x: 0, y: 300, width: 300, height: 300)
 
 let windowDelegate = MainWindowDelegate.init()
 
-let window = NSWindow.init(contentRect: contentRect, styleMask: [.titled], backing: .buffered, defer: false)
+let window = NSWindow.init(contentRect: contentRect, styleMask: [.titled, .closable], backing: .buffered, defer: false)
 window.contentView?.wantsLayer = true
 window.backgroundColor = .red
 window.makeKeyAndOrderFront(nil)
@@ -52,6 +71,7 @@ while (running) {
         }
     } while (event != nil)
 }
+
 
 
 

@@ -2,7 +2,11 @@
 #include "emu.h"
 #include "cpu.h"
 #include <stdint.h>
+#include <string.h>
 #include "controller.h"
+
+void print(const char *format, ...);
+void sprintBitsUint8(char *str, uint8_t val);
 
 void setPPUData(unsigned char value, struct PPU *ppu, int inc, struct Computer *state) 
 {
@@ -24,6 +28,15 @@ void setPPUData(unsigned char value, struct PPU *ppu, int inc, struct Computer *
 void setButton(struct Computer *state, bool isButtonPressed, uint8_t position) {
   if (isButtonPressed) {
     state->buttons = state->buttons | (1 << position);
+  }
+}
+
+int vramIncrement(struct PPU *ppu) 
+{
+  if ((ppu->control >> 2 & 0x01) == 1) {
+    return 32;
+  } else {
+    return 1;
   }
 }
 
@@ -236,15 +249,6 @@ unsigned char onCPUMemoryRead(unsigned int memoryAddress, struct Computer *state
 
   *shouldOverride = false;
   return 0;
-}
-
-int vramIncrement(struct PPU *ppu) 
-{
-  if (ppu->control >> 2 & 0x01 == 1) {
-    return 32;
-  } else {
-    return 1;
-  }
 }
 
 // runs on scanlines 0 to 239; I believe a game programmer has to set their y to 0 w/ an understanding it'll render at y = 1

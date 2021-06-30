@@ -6,3 +6,7 @@
 *.ilk
 *.bin
 .vs/
+*.o
+.DS_Store
+*.out
+xcuserdata/

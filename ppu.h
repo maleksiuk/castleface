@@ -8,6 +8,8 @@
 #define VIDEO_BUFFER_HEIGHT 240
 #define STARTING_PIXEL 2
 
+struct Computer;
+
 struct Color 
 {
   uint8_t red;

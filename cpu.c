@@ -2,7 +2,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include "cpu.h"
-#include <windows.h>
+#include "ppu.h"
 
 // the 6502 has 256 byte pages
 
@@ -43,8 +43,12 @@
 /*#define PRINT_GAP 1*/
 /*#define PRINT_PC 1*/
 
-/*void OutputDebugString(char *str) {*/
-/*}*/
+void OutputDebugString(char *str);
+
+void justForTesting(void *videoBuffer) {
+  printf("In justForTesting...\n");
+  printf("%d", ((uint8_t*)videoBuffer)[0]);
+}
 
 int cycleCounts[256] = {
 // 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, A, B, C, D, E, F  
@@ -135,12 +139,6 @@ unsigned char popFromStack(unsigned char *memory, unsigned char *stackRegister)
 
 enum AddressingMode { Implicit, Immediate, ZeroPage, ZeroPageX, ZeroPageY, Relative, Absolute, AbsoluteX, AbsoluteY, Indirect, IndexedIndirect, IndirectIndexed, Accumulator };
 
-int getMemoryAddressWithNoPageBoundaryConsiderations(unsigned int *memoryAddress, enum AddressingMode addressingMode, struct Computer *state) 
-{
-  bool unused = false;
-  return getMemoryAddress(memoryAddress, addressingMode, &unused, state);
-}
-
 int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressingMode, bool *pageBoundaryCrossed, struct Computer *state)
 {
   int length = 0;
@@ -226,10 +224,10 @@ int getMemoryAddress(unsigned int *memoryAddress, enum AddressingMode addressing
   return length;
 }
 
-int getOperandValueWithNoPageBoundaryConsiderations(unsigned char *value, enum AddressingMode addressingMode, struct Computer *state)
+int getMemoryAddressWithNoPageBoundaryConsiderations(unsigned int *memoryAddress, enum AddressingMode addressingMode, struct Computer *state) 
 {
-  bool pageBoundaryCrossed = false;
-  return getOperandValue(value, addressingMode, &pageBoundaryCrossed, state);
+  bool unused = false;
+  return getMemoryAddress(memoryAddress, addressingMode, &unused, state);
 }
 
 int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, bool *pageBoundaryCrossed, struct Computer *state)
@@ -239,6 +237,12 @@ int getOperandValue(unsigned char *value, enum AddressingMode addressingMode, bo
   *value = readMemory(memoryAddress, state);
 
   return length;
+}
+
+int getOperandValueWithNoPageBoundaryConsiderations(unsigned char *value, enum AddressingMode addressingMode, struct Computer *state)
+{
+  bool pageBoundaryCrossed = false;
+  return getOperandValue(value, addressingMode, &pageBoundaryCrossed, state);
 }
 
 void printInstruction(unsigned char instr, int length, struct Computer *state)
@@ -329,7 +333,8 @@ int cycleCount(unsigned char instr, bool pageBoundaryCrossed)
   return cycleCounts[instr] + (pageBoundaryCrossed == true ? 1 : 0);
 }
 
-int brk(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state) 
+// named oddly because unistd.h already has a brk
+int brk6502(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   state->pc++;
   unsigned int pcToPushToStack = state->pc + 1;
@@ -646,7 +651,6 @@ int bit(unsigned char instr, enum AddressingMode addressingMode, struct Computer
 int asl(unsigned char instr, enum AddressingMode addressingMode, struct Computer *state)
 {
   int length = 0;
-  unsigned char value = 0;
 
   if (addressingMode == Accumulator)
   {
@@ -1102,10 +1106,10 @@ signed char branchIfTrue(unsigned char val, unsigned char instr, enum Addressing
     state->pc += relativeDisplacement;
     branchedByRelativeDisplacement = relativeDisplacement;
 
-    *extraCycleCount++;
+    (*extraCycleCount)++;
     // TODO: check/test this logic
     if ((preJumpPc >> 8) != (state->pc >> 8)) {
-      *extraCycleCount++;
+      (*extraCycleCount)++;
     }
   }
 
@@ -1329,7 +1333,7 @@ void fireNmiInterrupt(struct Computer *state) {
 
 // instruction table
 int (*instructions[256])(unsigned char, enum AddressingMode, struct Computer *) = {
-  &brk, &ora, 0,    0,     0, &ora,    &asl, 0, &php, &ora, &asl,    0,    0, &ora, &asl,    0, // 0
+  &brk6502, &ora, 0,    0,     0, &ora,    &asl, 0, &php, &ora, &asl,    0,    0, &ora, &asl,    0, // 0
   &bpl, &ora, 0,    0,     0, &ora,    &asl, 0, &clc, &ora,    0,    0,    0, &ora, &asl,    0, // 1
   &jsr, &and, 0,    0,  &bit, &and,    &rol, 0, &plp, &and, &rol,    0, &bit, &and, &rol,    0, // 2
   &bmi, &and, 0,    0,     0, &and,    &rol, 0, &sec, &and,    0,    0,    0, &and, &rol,    0, // 3
