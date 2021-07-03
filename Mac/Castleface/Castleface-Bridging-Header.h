@@ -5,5 +5,6 @@
 #include "../../cpu.h"
 #include "../../ppu.h"
 #include "../../emu.h"
+#include "../../debug.h"
 #include "../../controller.h"
 

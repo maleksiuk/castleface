@@ -47,7 +47,8 @@ void OutputDebugString(char *str);
 
 void justForTesting(void *videoBuffer) {
   printf("In justForTesting...\n");
-  printf("%d", ((uint8_t*)videoBuffer)[0]);
+  printf("%d\n", ((uint8_t*)videoBuffer)[0]);
+  printf("%d\n", ((uint8_t*)videoBuffer)[1]);
 }
 
 int cycleCounts[256] = {

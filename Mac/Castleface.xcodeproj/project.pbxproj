@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		0E6E6A002688D2310023EF74 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E6E69FF2688D2310023EF74 /* main.swift */; };
 		0E6E6A10268CC7FF0023EF74 /* cpu.c in Sources */ = {isa = PBXBuildFile; fileRef = 0E6E6A0E268CC7FF0023EF74 /* cpu.c */; };
+		0E6E6A17268E11040023EF74 /* emu.c in Sources */ = {isa = PBXBuildFile; fileRef = 0E6E6A11268E11040023EF74 /* emu.c */; };
+		0E6E6A18268E11040023EF74 /* debug.c in Sources */ = {isa = PBXBuildFile; fileRef = 0E6E6A12268E11040023EF74 /* debug.c */; };
+		0E6E6A19268E11040023EF74 /* ppu.c in Sources */ = {isa = PBXBuildFile; fileRef = 0E6E6A15268E11040023EF74 /* ppu.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -29,6 +32,12 @@
 		0E6E6A062688D4D40023EF74 /* Castleface-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Castleface-Bridging-Header.h"; sourceTree = "<group>"; };
 		0E6E6A0E268CC7FF0023EF74 /* cpu.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = cpu.c; path = ../../cpu.c; sourceTree = "<group>"; };
 		0E6E6A0F268CC7FF0023EF74 /* cpu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = cpu.h; path = ../../cpu.h; sourceTree = "<group>"; };
+		0E6E6A11268E11040023EF74 /* emu.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = emu.c; path = ../../emu.c; sourceTree = "<group>"; };
+		0E6E6A12268E11040023EF74 /* debug.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = debug.c; path = ../../debug.c; sourceTree = "<group>"; };
+		0E6E6A13268E11040023EF74 /* emu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = emu.h; path = ../../emu.h; sourceTree = "<group>"; };
+		0E6E6A14268E11040023EF74 /* debug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = debug.h; path = ../../debug.h; sourceTree = "<group>"; };
+		0E6E6A15268E11040023EF74 /* ppu.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = ppu.c; path = ../../ppu.c; sourceTree = "<group>"; };
+		0E6E6A16268E11040023EF74 /* ppu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ppu.h; path = ../../ppu.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +71,12 @@
 			isa = PBXGroup;
 			children = (
 				0E6E69FF2688D2310023EF74 /* main.swift */,
+				0E6E6A12268E11040023EF74 /* debug.c */,
+				0E6E6A14268E11040023EF74 /* debug.h */,
+				0E6E6A11268E11040023EF74 /* emu.c */,
+				0E6E6A13268E11040023EF74 /* emu.h */,
+				0E6E6A15268E11040023EF74 /* ppu.c */,
+				0E6E6A16268E11040023EF74 /* ppu.h */,
 				0E6E6A0E268CC7FF0023EF74 /* cpu.c */,
 				0E6E6A0F268CC7FF0023EF74 /* cpu.h */,
 				0E6E6A062688D4D40023EF74 /* Castleface-Bridging-Header.h */,
@@ -127,8 +142,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0E6E6A17268E11040023EF74 /* emu.c in Sources */,
+				0E6E6A19268E11040023EF74 /* ppu.c in Sources */,
 				0E6E6A10268CC7FF0023EF74 /* cpu.c in Sources */,
 				0E6E6A002688D2310023EF74 /* main.swift in Sources */,
+				0E6E6A18268E11040023EF74 /* debug.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

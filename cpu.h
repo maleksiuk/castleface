@@ -61,5 +61,6 @@ void fireIrqInterrupt(struct Computer *state);
 void triggerNmiInterrupt(struct Computer *state);
 void fireNmiInterrupt(struct Computer *state);
 unsigned char readMemory(unsigned int memoryAddress, struct Computer *state);
+void justForTesting(void *videoBuffer);
 
 #endif /* !FILE_CPU_H_SEEN */
