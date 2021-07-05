@@ -6,6 +6,7 @@
 #include "cpu.h"
 #include "ppu.h"
 #include "emu.h"
+#include "debug.h"
 #include "controller.h"
 
 // helpful: https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
@@ -36,29 +37,13 @@
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-int running = 1;
+static int running = 1;
 
 // TODO: get rid of global var
 int mapperNumber = 0;
 
 void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
-
-
-void dumpOam(int num, uint8_t *oam)
-{
-  FILE *file;
-  char filename[30];
-  sprintf(filename, "oam-%d.dump", num);
-  file = fopen(filename, "w+");
-
-  for (int i = 0; i < 256; i+=4) {
-    fprintf(file, "ypos: %02x, tileindex: %02x, attr: %02x, xpos: %02x\n", oam[i], oam[i+1], oam[i+2], oam[i+3]);
-  }
-  print("done dumping oam to %s\n", filename);
-
-  fclose(file);
-}
 
 void dumpNametable(int num, const struct PPU *ppu)
 {
@@ -71,8 +56,12 @@ void dumpNametable(int num, const struct PPU *ppu)
 
   FILE *file;
   char filename[30];
-  sprintf(filename, "nametable-%d.dump", num);
-  file = fopen(filename, "w+");
+  sprintf_s(filename, 30, "nametable-%d.dump", num);
+  int fileOpenError = fopen_s(&file, filename, "w+");
+  if (fileOpenError) {
+    print("Error opening file %s. Error code: %d\n", filename, fileOpenError);
+    exit(fileOpenError);
+  }
 
   // each nametable has 30 rows of 32 tiles each, for 960 ($3C0) bytes
   int nametableByteIndex = 0;
@@ -133,11 +122,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   unsigned char header[16];
   FILE *file;
 
-  /*file = fopen("donkey_kong.nes", "rb");*/
-  /*file = fopen("Excitebike.nes", "rb");*/
-  file = fopen("MegaMan2.nes", "rb");
-  /*file = fopen("01-basics.nes", "rb");*/
-  /*file = fopen("06-right_edge.nes", "rb");*/
+  char gameFile[] = "MegaMan2.nes";
+  // char gameFile[] = "donkey_kong.nes";
+  // char gameFile[] = "Excitebike.nes";
+  int gameFileOpenError = fopen_s(&file, gameFile, "rb");
+  if (gameFileOpenError) {
+    print("Error opening game file %s\n", gameFile);
+    exit(gameFileOpenError);
+  }
+  // char gameFile[] = "01-basics.nes";
+  // char gameFile[] = "06-right_edge.nes";
 
   fread(header, sizeof(header), 1, file);
 
@@ -330,7 +324,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE))
     {
       if (msg.message == WM_QUIT) {
-        OutputDebugString("going to quit");
+        print("going to quit");
         running = 0;
       } else if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP) {
         uint8_t wasDown = ((msg.lParam & (1 << 30)) != 0);

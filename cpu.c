@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "cpu.h"
 #include "ppu.h"
+#include "debug.h"
 
 // the 6502 has 256 byte pages
 
@@ -43,8 +44,6 @@
 /*#define PRINT_GAP 1*/
 /*#define PRINT_PC 1*/
 
-void OutputDebugString(char *str);
-
 void justForTesting(void *videoBuffer) {
   printf("In justForTesting...\n");
   printf("%d\n", ((uint8_t*)videoBuffer)[0]);
@@ -78,8 +77,7 @@ void printState(struct Computer *state)
     | (state->decimalFlag << 3) | (state->interruptDisable << 2) | (state->zeroFlag << 1) | (state->carryFlag);
   char str[500];
   sprintf(str, "State: PC=%04x A=%02x X=%02x Y=%02x Z=%02x N=%02x C=%02x V=%02x S=%02x Flags=%02x Cycles: %d\n", state->pc, state->acc, state->xRegister, state->yRegister, state->zeroFlag, state->negativeFlag, state->carryFlag, state->overflowFlag, state->stackRegister, processorStatus, state->totalCyclesCompleted);
-  printf(str);
-  OutputDebugString(str);
+  print(str);
 #endif
 }
 
@@ -252,17 +250,14 @@ void printInstruction(unsigned char instr, int length, struct Computer *state)
   if (state->debuggingOn) {
     char str[500];
     sprintf(str, "%02x", instr);
-    printf(str);
-    OutputDebugString(str);
+    print(str);
 
     for (int i = 1; i <= length; i++)
     {
       sprintf(str, " %02x", state->memory[state->pc + i]);
-      printf(str);
-      OutputDebugString(str);
+      print(str);
     }
-    printf("\n");
-    OutputDebugString("\n");
+    print("\n");
   }
 #endif
 }
@@ -324,8 +319,7 @@ void printInstructionDescription(struct Computer *state, char *name, enum Addres
 
   char outputstr[500];
   sprintf(outputstr, "-> %s; %s; %s\n", name, addressingModeString(addressingMode), str);
-  printf(outputstr);
-  OutputDebugString(outputstr);
+  print(outputstr);
 #endif
 }
 
@@ -1380,8 +1374,7 @@ int executeInstruction(unsigned char instr, struct Computer *state)
 if (state->debuggingOn) {
   char str[20];
   sprintf(str, "PC: %04x\n", state->pc);
-  printf(str);
-  OutputDebugString(str);
+  print(str);
 }
 #endif
 

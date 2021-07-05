@@ -4,11 +4,9 @@
 #include <stdint.h>
 #include <string.h>
 #include "controller.h"
+#include "debug.h"
 
-void print(const char *format, ...);
-void sprintBitsUint8(char *str, uint8_t val);
-
-void setPPUData(unsigned char value, struct PPU *ppu, int inc, struct Computer *state) 
+static void setPPUData(unsigned char value, struct PPU *ppu, uint8_t inc) 
 {
   if (ppu->vRegister > 0x3FFF) {
     print("trying to write out of ppu bounds!\n");
@@ -31,7 +29,7 @@ void setButton(struct Computer *state, bool isButtonPressed, uint8_t position) {
   }
 }
 
-int vramIncrement(struct PPU *ppu) 
+uint8_t vramIncrement(struct PPU *ppu) 
 {
   if ((ppu->control >> 2 & 0x01) == 1) {
     return 32;
@@ -49,8 +47,8 @@ bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
   // TODO: consider using a table of function pointers
   // TODO: make constants for these memory addresses
   if (memoryAddress == 0x2006) {  // PPUADDR
-    char val[9] = "";
-    sprintBitsUint8(val, value);
+    // char val[9] = "";
+    // sprintBitsUint8(val, value);
 
     if (!ppu->wRegister) { // first write
       /*
@@ -73,7 +71,7 @@ bool onCPUMemoryWrite(unsigned int memoryAddress, unsigned char value, struct Co
     ppu->wRegister = !ppu->wRegister;
     shouldWriteMemory = false;
   } else if (memoryAddress == 0x2007) {
-    setPPUData(value, ppu, vramIncrement(ppu), state);
+    setPPUData(value, ppu, vramIncrement(ppu));
     shouldWriteMemory = false;
   } else if (memoryAddress == 0x2001) {
     ppu->mask = value;
@@ -279,7 +277,7 @@ void spriteEvaluation(struct PPU *ppu)
   }
 }
 
-void renderSpritePixel(struct PPU *ppu, struct Computer *state, struct Color *palette, uint8_t backgroundVal, void *videoBuffer) 
+static void renderSpritePixel(struct PPU *ppu, struct Color *palette, uint8_t backgroundVal, void *videoBuffer) 
 {
   unsigned char control = ppu->control;
 
@@ -379,7 +377,7 @@ bool isRenderingEnabled(struct PPU *ppu) {
   return (ppu->mask & 0x18);
 }
 
-uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Computer *state, struct Color *palette, void *videoBuffer) {
+static uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Color *palette, void *videoBuffer) {
   if (isRenderingEnabled(ppu)) {
     /*print("rendering. line %d, cycle %d\n", ppu->scanline, ppu->scanlineClockCycle);*/
   } else {
@@ -654,9 +652,9 @@ void ppuTick(struct PPU *ppu, struct Computer *state, struct Color *palette, voi
     }
 
     if (ppu->scanlineClockCycle >= STARTING_PIXEL && ppu->scanlineClockCycle < VIDEO_BUFFER_WIDTH + STARTING_PIXEL) {
-      uint8_t backgroundVal = renderBackgroundPixel2(ppu, state, palette, videoBuffer);
+      uint8_t backgroundVal = renderBackgroundPixel2(ppu, palette, videoBuffer);
       if (ppu->scanline > 0) {
-        renderSpritePixel(ppu, state, palette, backgroundVal, videoBuffer);
+        renderSpritePixel(ppu, palette, backgroundVal, videoBuffer);
       }
     } // end of conditional for visible clock cycle
 

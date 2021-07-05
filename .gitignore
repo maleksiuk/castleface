@@ -3,6 +3,7 @@
 *.pdb
 *.nes
 *.swp
+*.swo
 *.ilk
 *.bin
 .vs/
