@@ -73,6 +73,6 @@ struct PPUClosure
   unsigned char (*onMemoryRead)(unsigned int memoryAddress, struct Computer *state, bool *shouldOverride);
 };
 
-
+int createPPU(struct PPU **ppu, struct Cartridge *cartridge);
 
 #endif /* !FILE_PPU_H_SEEN */

@@ -9,7 +9,7 @@ struct KeyboardInput;
 
 struct Computer 
 { 
-  unsigned char *memory;
+  uint8_t *memory;
 
   // TODO: I don't like having this in the CPU
   // 8 kB each. Covering 0x8000 to 0xFFFF

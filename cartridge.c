@@ -68,16 +68,14 @@ int loadCartridge(struct Cartridge **cartridge, char *filename) {
   int mapperNumber = (header[7] & 0xF0) | (header[6] >> 4);
   print("mapper number: %d\n", mapperNumber);
 
-  uint8_t *prgRom;
-  prgRom = (uint8_t *) malloc(sizeOfPrgRomInBytes);
+  uint8_t *prgRom = (uint8_t *) malloc(sizeOfPrgRomInBytes);
   if (prgRom == 0) {
     print("Could not allocate memory for prgRom.");
     fclose(file);
     return(2);
   }
 
-  uint8_t *chrRom;
-  chrRom = (uint8_t *) malloc(sizeOfChrRomInBytes);
+  uint8_t *chrRom = (uint8_t *) malloc(sizeOfChrRomInBytes);
   if (chrRom == 0) {
     print("Could not allocate memory for chrRom.");
     free(prgRom);

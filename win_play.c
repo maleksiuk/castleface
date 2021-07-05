@@ -40,9 +40,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 static int running = 1;
 
-// TODO: get rid of global var
-int mapperNumber = 0;
-
 void *videoBuffer;
 BITMAPINFO bitmapInfo = { 0 };
 
@@ -134,28 +131,23 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     exit(loadCartridgeError);
   }
 
-  mapperNumber = cartridge->mapperNumber;
-
   // TODO: check return value of mallocs and callocs
-  unsigned char *memory;
-  memory = (unsigned char *) malloc(0x8000 + cartridge->sizeOfPrgRomInBytes);
-
-  unsigned char *ppuMemory;
-  ppuMemory = (unsigned char *) calloc(1, 0x3FFF);
-
-  uint8_t *oam;
-  oam = (uint8_t *) calloc(256, sizeof(uint8_t));
+  uint8_t *memory = (uint8_t *) malloc(0x8000 + cartridge->sizeOfPrgRomInBytes);
+  if (!memory) {
+    print("Could not initialize main memory block.");
+    return 1;
+  }
 
   // copy prgRom starting at 0x8000, even if it's bigger than 32 kB. We will intercept reads
   // from this memory and do the right thing based on MMC.
   memcpy(&memory[0x8000], cartridge->prgRom, cartridge->sizeOfPrgRomInBytes);
 
-  // TODO: might as well just read chrRom right into ppuMemory, right?
-  memcpy(ppuMemory, cartridge->chrRom, cartridge->sizeOfChrRomInBytes);
-  struct PPU ppu = { .memory = ppuMemory, .oam = oam, .scanline = -1, .mapperNumber = mapperNumber };   // TODO: make a struct initializer
-  ppu.sprites = ppu.sprites0;
-  ppu.followingSprites = ppu.sprites1;
-  ppu.wRegister = false;
+  struct PPU *ppu;
+  int ppuCreationError = createPPU(&ppu, cartridge);
+  if (ppuCreationError) {
+    print("Error creating the PPU");
+    return ppuCreationError;
+  }
 
   // colours from http://www.thealmightyguru.com/Games/Hacking/Wiki/index.php/NES_Palette
   // TODO: write them into a .pal file and read them out
@@ -219,11 +211,11 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   struct KeyboardInput keyboardInput = { .up = false  };
   struct PPUClosure ppuClosure;
-  buildPPUClosure(&ppuClosure, &ppu);
+  buildPPUClosure(&ppuClosure, ppu);
 
   struct Computer state = { .memory = memory, .keyboardInput = &keyboardInput, .ppuClosure = &ppuClosure };
 
-  if (mapperNumber == 0) {
+  if (cartridge->mapperNumber == 0) {
     state.prgRomBlock1 = &memory[0x8000];
     state.prgRomBlock2 = &memory[0xA000];
     if (cartridge->sizeOfPrgRomInBytes == 0x8000) {
@@ -235,7 +227,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       state.prgRomBlock3 = &memory[0x8000];
       state.prgRomBlock4 = &memory[0xA000];
     }
-  } else if (mapperNumber == 1) {
+  } else if (cartridge->mapperNumber == 1) {
     // For mapper 1 it seems to be important to start off with the last 16 kB bank in 0xC000 - 0xFFFF
     state.prgRomBlock1 = &memory[0x8000];
     state.prgRomBlock2 = &memory[0xA000];
@@ -293,15 +285,15 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             setKeyboardInput(&keyboardInput.a, wasDown, isDown);
             break;
           case 0x33: // 3
-            dumpOam(1, ppu.oam);
+            dumpOam(1, ppu->oam);
             break;
           case 0x34: // 4
             state.debuggingOn = true;
-            ppu.debuggingOn = true;
+            ppu->debuggingOn = true;
             break;
           case 0x35: // 5
             state.debuggingOn = false;
-            ppu.debuggingOn = false;
+            ppu->debuggingOn = false;
             break;
         }
       }
@@ -310,7 +302,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
       DispatchMessageA(&msg);
     }
 
-    bool vblankStarted = executeEmulatorCycle(&state, &ppu, videoBuffer, palette);
+    bool vblankStarted = executeEmulatorCycle(&state, ppu, videoBuffer, palette);
 
     instructionsExecuted++;
     loopCount++;
@@ -351,8 +343,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
   free(videoBuffer);
   free(memory);
-  free(ppuMemory);
-  free(oam);
+  free(ppu->memory);
+  free(ppu->oam);
+  free(ppu);
   free(cartridge->prgRom);
   free(cartridge->chrRom);
   free(cartridge);
