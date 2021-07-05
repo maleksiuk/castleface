@@ -3,15 +3,26 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #ifdef _WIN32
-  void OutputDebugStringA(LPCSTR);
+void OutputDebugStringA(LPCSTR);
 #else
-  void OutputDebugStringA(char *str) {
-    printf("%s", str);
-  }
+void OutputDebugStringA(char *str) {
+  printf("%s", str);
+}
 
-  #define sprintf_s(buf, ...) snprintf((buf), sizeof(buf), __VA_ARGS__)
+int fopen_s(FILE **f, const char *name, const char *mode) {
+  int ret = 0;
+  assert(f);
+  *f = fopen(name, mode);
+  if (!*f)
+    ret = 1;
+  return ret;
+}
+
+#define sprintf_s(buf, size, fmt, ...) snprintf((buf), size, fmt, __VA_ARGS__)
+#define vsprintf_s(buf, size, fmt, ...) vsnprintf(buf, size, fmt, __VA_ARGS__)
 #endif
 
 void print(const char *format, ...) {

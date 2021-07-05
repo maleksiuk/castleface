@@ -421,9 +421,9 @@ static uint8_t renderBackgroundPixel2(struct PPU *ppu, struct Color *palette, vo
   }
   struct Color color = palette[colorIndex];
 
-  uint16_t tmpPalAddr = 0x3F00 + 4*paletteNumber + val;
-
   /*
+  uint16_t tmpPalAddr = 0x3F00 + 4*paletteNumber + val;
+   
   // tile 0 is 0 to 7, tile 1 is 8 to 15, tile 2 is 16 to 23, etc. So tile 9 starts at 9*8, tile 16 starts at 16*8
   int debugTileX = 17;
   int debugTileY = 13;
@@ -508,9 +508,6 @@ void fetchyFetchy(struct PPU *ppu) {
 }
 
 void shifterReload(struct PPU *ppu) {
-  uint16_t lowWas = ppu->patternTableShiftRegisterLow;
-  uint16_t highWas = ppu->patternTableShiftRegisterHigh;
-
   ppu->patternTableShiftRegisterLow = ppu->patternTableShiftRegisterLow & ~0x00FF;  // clear the bottom 8 bits
   ppu->patternTableShiftRegisterLow = ppu->patternTableShiftRegisterLow | (ppu->ptTileLow);
 

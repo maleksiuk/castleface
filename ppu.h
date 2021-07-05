@@ -9,6 +9,7 @@
 #define STARTING_PIXEL 2
 
 struct Computer;
+struct Cartridge;
 
 struct Color 
 {

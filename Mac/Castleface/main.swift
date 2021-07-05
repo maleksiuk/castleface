@@ -16,11 +16,8 @@
 import Foundation
 import AppKit
 
-print("Hello, World!")
-
-// TODO: this is duplicated in ppu.h
-let videoBufferWidth = 256
-let videoBufferHeight = 240
+let videoBufferWidth = Int(VIDEO_BUFFER_WIDTH)
+let videoBufferHeight = Int(VIDEO_BUFFER_HEIGHT)
 
 var running = true
 
@@ -39,14 +36,13 @@ justForTesting(videoBuffer)
 
 //executeEmulatorCycle()
 
-class MainWindowDelegate : NSObject, NSWindowDelegate {
-    
+class MainWindowDelegate : NSObject, NSWindowDelegate {    
     func windowWillClose(_ notification: Notification) {
         running = false
     }
 }
 
-let contentRect = NSRect.init(x: 0, y: 300, width: videoBufferWidth, height: videoBufferHeight)
+let contentRect = NSRect.init(x: 30, y: 300, width: videoBufferWidth * 2, height: videoBufferHeight * 2)
 
 let windowDelegate = MainWindowDelegate.init()
 
@@ -86,8 +82,6 @@ while (running) {
         event = NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: true)
         
         if let event = event {
-//            debugPrint("got event")
-//            debugPrint(event)
             switch event.type {
             default:
                 NSApp.sendEvent(event)
