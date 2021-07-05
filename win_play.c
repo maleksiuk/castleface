@@ -8,6 +8,7 @@
 #include "emu.h"
 #include "debug.h"
 #include "controller.h"
+#include "cartridge.h"
 
 // helpful: https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
 
@@ -119,67 +120,25 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   // TODO: check return value to see if it worked
   timeBeginPeriod(1);
 
-  unsigned char header[16];
-  FILE *file;
-
   char gameFile[] = "MegaMan2.nes";
   // char gameFile[] = "donkey_kong.nes";
   // char gameFile[] = "Excitebike.nes";
-  int gameFileOpenError = fopen_s(&file, gameFile, "rb");
-  if (gameFileOpenError) {
-    print("Error opening game file %s\n", gameFile);
-    exit(gameFileOpenError);
-  }
+
   // char gameFile[] = "01-basics.nes";
   // char gameFile[] = "06-right_edge.nes";
 
-  fread(header, sizeof(header), 1, file);
-
-  uint8_t numPrgRomUnits = header[4];
-  int sizeOfPrgRomInBytes = 16 * 1024 * numPrgRomUnits;
-  print("Size of PRG ROM in 16kb units: %d (and in bytes: %d)\n", numPrgRomUnits, sizeOfPrgRomInBytes);
-
-  int sizeOfChrRomInBytes = 8 * 1024 * header[5];
-  print("Size of CHR ROM in 8 KB units (Value 0 means the board uses CHR RAM): %d (and in bytes: %d)\n", header[5], sizeOfChrRomInBytes);
-
-  if ((header[7] >> 2) & 3) {
-    print("NES 2.0 format\n");
-  } else {
-    print("Not NES 2.0 format\n");
+  struct Cartridge *cartridge;
+  int loadCartridgeError = loadCartridge(&cartridge, gameFile);
+  if (loadCartridgeError) {
+    print("Error loading cartridge: %d\n", loadCartridgeError);
+    exit(loadCartridgeError);
   }
 
-  if (header[6] & 1) {
-    print("Vertical mirroring\n");
-  } else {
-    print("Horizontal mirroring\n");
-  }
-
-  if ((header[6] >> 1) & 1) {
-    print("Cartridge contains battery-backed PRG RAM ($6000-7FFF) or other persistent memory\n");
-  } else {
-    print("Cartridge does not contain battery-packed PRG RAM\n");
-  }
-
-  if ((header[6] >> 2) & 1) {
-    print("512-byte trainer at $7000-$71FF (stored before PRG data)\n");
-  } else {
-    print("No 512-byte trainer at $7000-$71FF (stored before PRG data)\n");
-  }
-
-  if ((header[6] >> 3) & 1) {
-    print("Ignore mirroring control or above mirroring bit; instead provide four-screen VRAM\n");
-  } else {
-    print("Do not ignore mirroring control or above mirroring bit\n");
-  }
-
-  // header[6] bits 4-7 are lower nybble
-  // header[7] bits 4-7 are upper nybble
-  mapperNumber = (header[7] & 0xF0) | (header[6] >> 4);
-  print("mapper number: %d\n", mapperNumber);
+  mapperNumber = cartridge->mapperNumber;
 
   // TODO: check return value of mallocs and callocs
   unsigned char *memory;
-  memory = (unsigned char *) malloc(0x8000 + sizeOfPrgRomInBytes);
+  memory = (unsigned char *) malloc(0x8000 + cartridge->sizeOfPrgRomInBytes);
 
   unsigned char *ppuMemory;
   ppuMemory = (unsigned char *) calloc(1, 0x3FFF);
@@ -187,34 +146,12 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   uint8_t *oam;
   oam = (uint8_t *) calloc(256, sizeof(uint8_t));
 
-  unsigned char *prgRom;
-  prgRom = (unsigned char *) malloc(sizeOfPrgRomInBytes);
-  if (prgRom == 0) 
-  {
-    print("Could not allocate memory for prgRom.");
-    // TODO: free the other memory I've allocated?
-    return(0);
-  }
-
-  unsigned char *chrRom;
-  chrRom = (unsigned char *) malloc(sizeOfChrRomInBytes);
-  if (chrRom == 0)
-  {
-    print("Could not allocate memory for chrRom.");
-    return(0);
-  }
-
-  print("about to read into prgRom, num of bytes: %d\n", sizeOfPrgRomInBytes);
-  fread(prgRom, sizeOfPrgRomInBytes, 1, file);
-  fread(chrRom, sizeOfChrRomInBytes, 1, file);
-  fclose(file);
-
   // copy prgRom starting at 0x8000, even if it's bigger than 32 kB. We will intercept reads
   // from this memory and do the right thing based on MMC.
-  memcpy(&memory[0x8000], prgRom, sizeOfPrgRomInBytes);
+  memcpy(&memory[0x8000], cartridge->prgRom, cartridge->sizeOfPrgRomInBytes);
 
   // TODO: might as well just read chrRom right into ppuMemory, right?
-  memcpy(ppuMemory, chrRom, sizeOfChrRomInBytes);
+  memcpy(ppuMemory, cartridge->chrRom, cartridge->sizeOfChrRomInBytes);
   struct PPU ppu = { .memory = ppuMemory, .oam = oam, .scanline = -1, .mapperNumber = mapperNumber };   // TODO: make a struct initializer
   ppu.sprites = ppu.sprites0;
   ppu.followingSprites = ppu.sprites1;
@@ -289,7 +226,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   if (mapperNumber == 0) {
     state.prgRomBlock1 = &memory[0x8000];
     state.prgRomBlock2 = &memory[0xA000];
-    if (sizeOfPrgRomInBytes == 0x8000) {
+    if (cartridge->sizeOfPrgRomInBytes == 0x8000) {
       // NROM-256
       state.prgRomBlock3 = &memory[0xC000];
       state.prgRomBlock4 = &memory[0xE000];
@@ -302,7 +239,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     // For mapper 1 it seems to be important to start off with the last 16 kB bank in 0xC000 - 0xFFFF
     state.prgRomBlock1 = &memory[0x8000];
     state.prgRomBlock2 = &memory[0xA000];
-    int addressOfLastBank = 0x8000 + ((numPrgRomUnits - 1) * 0x4000); 
+    int addressOfLastBank = 0x8000 + ((cartridge->numPrgRomUnits - 1) * 0x4000); 
     state.prgRomBlock3 = &memory[addressOfLastBank];
     state.prgRomBlock4 = &memory[addressOfLastBank + 0x2000];
   } else {
@@ -416,8 +353,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   free(memory);
   free(ppuMemory);
   free(oam);
-  free(prgRom);
-  free(chrRom);
+  free(cartridge->prgRom);
+  free(cartridge->chrRom);
+  free(cartridge);
   timeEndPeriod(1);
   return 0;
 }
