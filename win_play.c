@@ -40,8 +40,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 static int running = 1;
 
-void *videoBuffer;
-BITMAPINFO bitmapInfo = { 0 };
+static void *videoBuffer;
+static BITMAPINFO bitmapInfo = { 0 };
 
 void dumpNametable(int num, const struct PPU *ppu)
 {
@@ -81,7 +81,7 @@ void dumpNametable(int num, const struct PPU *ppu)
   fclose(file);
 }
 
-void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) {
+static void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) {
   HDC deviceContext = GetDC(windowHandle);
 
   RECT clientRect;
@@ -99,7 +99,7 @@ void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitmapInfo) 
   ReleaseDC(windowHandle, deviceContext);
 }
 
-void setKeyboardInput(bool *buttonValue, bool wasDown, bool isDown) {
+static void setKeyboardInput(bool *buttonValue, bool wasDown, bool isDown) {
   if (wasDown && !isDown) {
     *buttonValue = false;
   }
@@ -131,40 +131,23 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     exit(loadCartridgeError);
   }
 
-  // TODO: check return value of mallocs and callocs
-  uint8_t *memory = (uint8_t *) malloc(0x8000 + cartridge->sizeOfPrgRomInBytes);
-  if (!memory) {
-    print("Could not initialize main memory block.");
-    return 1;
-  }
-
-  // copy prgRom starting at 0x8000, even if it's bigger than 32 kB. We will intercept reads
-  // from this memory and do the right thing based on MMC.
-  memcpy(&memory[0x8000], cartridge->prgRom, cartridge->sizeOfPrgRomInBytes);
-
   struct PPU *ppu;
   int ppuCreationError = createPPU(&ppu, cartridge);
   if (ppuCreationError) {
     print("Error creating the PPU");
-    return ppuCreationError;
+    exit(ppuCreationError);
   }
 
-  // colours from http://www.thealmightyguru.com/Games/Hacking/Wiki/index.php/NES_Palette
-  // TODO: write them into a .pal file and read them out
-  struct Color palette[64] = {
-    {124,124,124},{0,0,252},{0,0,188},{68,40,188},{148,0,132},{168,0,32},{168,16,0},{136,20,0},
-    {80,48,0},{0,120,0},{0,104,0},{0,88,0},{0,64,88},{0,0,0},{0,0,0},{0,0,0},
-    {188,188,188},{0,120,248},{0,88,248},{104,68,252},{216,0,204},{228,0,88},{248,56,0},{228,92,16},
-    {172,124,0},{0,184,0},{0,168,0},{0,168,68},{0,136,136},{0,0,0},{0,0,0},{0,0,0},
-    {248,248,248},{60,188,252},{104,136,252},{152,120,248},{248,120,248},{248,88,152},{248,120,88},{252,160,68},
-    {248,184,0},{184,248,24},{88,216,84},{88,248,152},{0,232,216},{120,120,120},{0,0,0},{0,0,0},
-    {252,252,252},{164,228,252},{184,184,248},{216,184,248},{248,184,248},{248,164,192},{240,208,176},{252,224,168},
-    {248,216,120},{216,248,120},{184,248,184},{184,248,216},{0,252,252},{248,216,248},{0,0,0},{0,0,0}
-  };
+  struct Color palette[64];
+  loadPalette(palette);
 
-  // Prep video buffer and bitmap info
-  videoBuffer = malloc(VIDEO_BUFFER_WIDTH * VIDEO_BUFFER_HEIGHT * 4);
+  videoBuffer = calloc(VIDEO_BUFFER_WIDTH * VIDEO_BUFFER_HEIGHT, 4);
+  if (!videoBuffer) {
+    print("Error creating the video buffer");
+    exit(1);
+  }
 
+  // Set up bitmap info
   bitmapInfo.bmiHeader.biSize = sizeof(bitmapInfo.bmiHeader);
   bitmapInfo.bmiHeader.biWidth = VIDEO_BUFFER_WIDTH;
   bitmapInfo.bmiHeader.biHeight = -VIDEO_BUFFER_HEIGHT;
@@ -176,7 +159,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   LPCSTR CLASS_NAME = "CastlefaceWindowClass";
 
   WNDCLASSA wc = { 0 };
-
   wc.lpfnWndProc   = WindowProc;
   wc.hInstance     = hInstance;
   wc.lpszClassName = CLASS_NAME;
@@ -212,6 +194,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   struct KeyboardInput keyboardInput = { .up = false  };
   struct PPUClosure ppuClosure;
   buildPPUClosure(&ppuClosure, ppu);
+
+  uint8_t *memory = (uint8_t *) malloc(0x8000 + cartridge->sizeOfPrgRomInBytes);
+  if (!memory) {
+    print("Could not initialize main memory block.");
+    return 1;
+  }
+
+  // copy prgRom starting at 0x8000, even if it's bigger than 32 kB. We will intercept reads
+  // from this memory and do the right thing based on MMC.
+  memcpy(&memory[0x8000], cartridge->prgRom, cartridge->sizeOfPrgRomInBytes);
 
   struct Computer state = { .memory = memory, .keyboardInput = &keyboardInput, .ppuClosure = &ppuClosure };
 

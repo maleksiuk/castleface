@@ -75,5 +75,6 @@ struct PPUClosure
 };
 
 int createPPU(struct PPU **ppu, struct Cartridge *cartridge);
+void loadPalette(struct Color palette[64]);
 
 #endif /* !FILE_PPU_H_SEEN */
