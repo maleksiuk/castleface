@@ -36,11 +36,25 @@ justForTesting(videoBuffer)
 
 //executeEmulatorCycle()
 
-class MainWindowDelegate : NSObject, NSWindowDelegate {    
+class MainWindowDelegate : NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         running = false
     }
 }
+
+var homeDir = FileManager.default.homeDirectoryForCurrentUser
+var gameLocation = homeDir.appendingPathComponent("MegaMan2.nes", isDirectory: false).path
+
+var cartridge : UnsafeMutablePointer<Cartridge>? = nil
+let loadCartridgeError = loadCartridge(&cartridge, gameLocation)
+if (loadCartridgeError != 0) {
+    exit(loadCartridgeError)
+}
+
+
+
+print("mapper: \(cartridge?.pointee.mapperNumber)")
+
 
 let contentRect = NSRect.init(x: 30, y: 300, width: videoBufferWidth * 2, height: videoBufferHeight * 2)
 
@@ -91,6 +105,7 @@ while (running) {
 }
 
 
+cartridge?.deallocate()
 
 
 

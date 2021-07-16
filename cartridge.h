@@ -13,6 +13,6 @@ struct Cartridge {
   uint8_t numPrgRomUnits;
 };
 
-int loadCartridge(struct Cartridge **cartridge, char *filename);
+int loadCartridge(struct Cartridge **cartridge, const char *filename);
 
 #endif /* !FILE_CARTRIDGE_H_SEEN */

@@ -14,7 +14,7 @@
  *  3: Could not allocate memory for chrRom.
  *
  */
-int loadCartridge(struct Cartridge **cartridge, char *filename) {
+int loadCartridge(struct Cartridge **cartridge, const char *filename) {
   uint8_t header[16];
   FILE *file;
 
