@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "controller.h"
 #include "cartridge.h"
+#include <dsound.h>
 
 // helpful: https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
 
@@ -35,6 +36,8 @@
 
 // - got the kingswood assembler from http://web.archive.org/web/20190301123637/http://www.kingswood-consulting.co.uk/assemblers/
 //   (but then learned that it also comes with the Klaus functional tests)
+
+typedef HRESULT directSoundCreate(LPCGUID lpcGuidDevice, LPDIRECTSOUND8 *ppDS8, LPUNKNOWN pUnkOuter);
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
@@ -99,12 +102,121 @@ static void displayFrame(void *videoBuffer, HWND windowHandle, BITMAPINFO *bitma
   ReleaseDC(windowHandle, deviceContext);
 }
 
-static void setKeyboardInput(bool *buttonValue, bool wasDown, bool isDown) {
+static void setKeyboardInput(bool *buttonValue, bool wasDown, bool isDown) 
+{
   if (wasDown && !isDown) {
     *buttonValue = false;
   }
   if (!wasDown && isDown) {
     *buttonValue = true;
+  }
+}
+
+void initDirectSound(HWND windowHandle)
+{
+  HMODULE directSoundLibrary = LoadLibraryA("dsound.dll");
+
+  if (directSoundLibrary) {
+    directSoundCreate* create = (directSoundCreate*) GetProcAddress(directSoundLibrary, "DirectSoundCreate8");
+    LPDIRECTSOUND8 directSound;
+
+    if (create && create(0, &directSound, 0) == DS_OK) {
+      if (IDirectSound_SetCooperativeLevel(directSound, windowHandle, DSSCL_NORMAL) == DS_OK) {
+        print("success!\n");
+
+        int nChannels = 1;
+        int nSamplesPerSec = 44100;
+        int wBitsPerSample = 8;
+        int nBlockAlign = (nChannels * wBitsPerSample) / 8;
+
+        WAVEFORMATEX waveFormat = {
+          .wFormatTag = WAVE_FORMAT_PCM,
+          .nChannels = nChannels,
+          .nSamplesPerSec = nSamplesPerSec,
+          .nAvgBytesPerSec = nSamplesPerSec * nBlockAlign,
+          .nBlockAlign = nBlockAlign,
+          .wBitsPerSample = wBitsPerSample
+        };
+
+        DSBUFFERDESC bufferDescription = {
+          .dwSize = sizeof(bufferDescription),
+          .dwFlags = DSBCAPS_GETCURRENTPOSITION2,
+          .dwBufferBytes = 3 * nSamplesPerSec * (wBitsPerSample / 8),
+          .lpwfxFormat = &waveFormat,
+          .guid3DAlgorithm = DS3DALG_DEFAULT
+        };
+
+        LPDIRECTSOUNDBUFFER soundBuffer;
+        
+        if (IDirectSound_CreateSoundBuffer(directSound, &bufferDescription, &soundBuffer, 0) == DS_OK) {
+          print("successfully created a sound buffer\n");
+
+          DWORD audioOffset = 0;
+          DWORD bytesToWrite = 44100 * 2;  // 2 seconds worth of samples (each sample is 1 byte)
+          LPVOID audioPointer1;
+          DWORD numAudioBytes1;
+          LPVOID audioPointer2;
+          DWORD numAudioBytes2;
+
+          if (IDirectSoundBuffer_Lock(soundBuffer, 
+              audioOffset,
+              bytesToWrite,
+              &audioPointer1,
+              &numAudioBytes1,
+              &audioPointer2,
+              &numAudioBytes2,
+              0) == DS_OK) {
+            print("locked. %d %d\n", numAudioBytes1, numAudioBytes2);
+
+            bool highWave = false;
+
+            // middle C frequency is about 262 Hz
+            // so we want 262 cycles every second
+            // for us, we have 44100 samples in a second
+            // so that's 168.32 samples per cycle
+            // which would be 84.16 for a high square, 84.16 for a low square
+
+            int8_t *ptr = (int8_t *) audioPointer1;
+            for (DWORD i = 0; i < numAudioBytes1; i++) {
+              if (highWave) {
+                *ptr = 105;
+              } else {
+                *ptr = -105;
+              }
+              if (i % 84 == 0) {
+                highWave = !highWave;
+              }
+              ptr++;
+            }
+
+            if (IDirectSoundBuffer_Unlock(soundBuffer,
+                audioPointer1,
+                numAudioBytes1,
+                audioPointer2,
+                0) == DS_OK) {
+              print("unlocked\n");
+            } else {
+              print("could not unlock\n");
+            }
+          } else {
+            print("could not lock\n");
+          }
+
+          if (IDirectSoundBuffer_Play(soundBuffer, 0, 0, DSBPLAY_LOOPING) != DS_OK) {
+            print("Could not play sound.\n");
+          }
+
+        } else {
+          print("Could not create a sound buffer\n");
+        }
+      } else {
+        print("Could not set DirectSound cooperative level.");
+      }
+    } else {
+      print("Could not initialize DirectSound.\n");
+    }
+  } else {
+    print("Could not find DirectSound DLL.\n");
   }
 }
 
@@ -186,6 +298,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
   if (windowHandle == NULL) {
     return 0;
   }
+
+  initDirectSound(windowHandle);
 
   ShowWindow(windowHandle, nShowCmd);
 
